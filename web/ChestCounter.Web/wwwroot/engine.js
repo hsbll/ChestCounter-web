@@ -1,12 +1,17 @@
-// One analyze(file) function for the page. The analyzer normally lives in a worker; if the browser cannot start
-// it there, it is loaded in the page itself (same result, the page just freezes while a replay is read).
+// One analyze(file) function for the page. The analyzer normally lives in a worker; if it cannot start there
+// (error, or no sign of life), it is loaded in the page itself: same result, the page just freezes for a moment
+// while a replay is read.
 import { loadAnalyzer } from './runtime.js';
 
-export async function createEngine(onProgress = () => {}) {
+/** How long the worker may stay silent: before the runtime download shows progress, and once it does. */
+const QUIET_START_MS = 20000, QUIET_DOWNLOAD_MS = 120000;
+
+export async function createEngine(onProgress = () => {}, onNote = () => {}) {
     try {
         return await workerEngine(onProgress);
     } catch (error) {
-        console.warn('Worker indisponível, a análise roda na própria página:', error);
+        console.warn('[ChestCounter] worker indisponível, a análise roda na própria página:', error);
+        onNote('fallback');
         const api = await loadAnalyzer(onProgress);
         return {
             mode: 'page',
@@ -26,9 +31,10 @@ function workerEngine(onProgress) {
         const pending = new Map();
         let nextId = 1;
         let started = false;
+        let watchdog = null;
 
-        worker.onerror = event => {
-            const error = new Error(event.message || 'falha ao iniciar o worker');
+        const giveUp = error => {
+            clearTimeout(watchdog);
             if (!started) {
                 worker.terminate();
                 reject(error);
@@ -36,15 +42,23 @@ function workerEngine(onProgress) {
             for (const waiting of pending.values()) waiting.reject(error);
             pending.clear();
         };
+        const watch = quiet => {
+            clearTimeout(watchdog);
+            if (!started) watchdog = setTimeout(() => giveUp(new Error(`o worker não respondeu em ${quiet / 1000} s`)), quiet);
+        };
+        watch(QUIET_START_MS);
+
+        worker.onerror = event => giveUp(new Error(event.message || 'falha ao iniciar o worker'));
         worker.onmessage = event => {
             const message = event.data;
             if (message.type === 'progress') {
+                watch(QUIET_DOWNLOAD_MS);
                 onProgress(message.loaded, message.total);
             } else if (message.type === 'failed') {
-                worker.terminate();
-                reject(new Error(message.message));
+                giveUp(new Error(message.message));
             } else if (message.type === 'ready') {
                 started = true;
+                clearTimeout(watchdog);
                 resolve({
                     mode: 'worker',
                     analyzerVersion: message.analyzerVersion,

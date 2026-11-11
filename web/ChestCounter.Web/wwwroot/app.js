@@ -524,7 +524,7 @@ $('reset').addEventListener('click', async () => {
     setStatus('Carregando o analisador… os botões são liberados quando terminar.');
     const slow = setInterval(() => {
         if (Date.now() - lastMove > 45000) {
-            setStatus('Carregando o analisador… está demorando mais que o normal. Se não avançar, recarregue a página (Ctrl+F5).');
+            setStatus('Carregando o analisador… está demorando mais que o normal. Se não avançar, recarregue a página (Ctrl+F5); se continuar, abra o console (F12) e veja as linhas [ChestCounter].');
         }
     }, 5000);
     try {
@@ -536,6 +536,10 @@ $('reset').addEventListener('click', async () => {
             setStatus(loaded < total
                 ? `Baixando o analisador… ${loaded} de ${total} arquivos. Os botões são liberados quando terminar.`
                 : 'Iniciando o analisador…');
+        }, () => {
+            lastMove = Date.now();
+            bar.style.width = '2%';
+            setStatus('Carregando o analisador de outro modo… os botões são liberados quando terminar.');
         });
         bar.style.width = '100%';
         setStatus('Pronto para ler replays.');
