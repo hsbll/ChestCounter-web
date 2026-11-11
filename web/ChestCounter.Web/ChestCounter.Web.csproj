@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <!--
+    Web version of ChestCounter: the same replay analyzer, compiled to WebAssembly. Everything runs in the
+    browser tab (no server, no overlay, no updater). The page (wwwroot) calls Interop.Analyze through JSExport.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>ChestCounter.Web</AssemblyName>
+    <RootNamespace>ChestCounter.Web</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- The page imports ./_framework/dotnet.js by its plain name. -->
+    <WasmFingerprintDotnetJs>false</WasmFingerprintDotnetJs>
+    <!-- Platform warnings of the desktop files linked below (they are never called here). -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\lib\FortniteReplayReader\FortniteReplayReader.csproj" />
+  </ItemGroup>
+
+  <!-- The analysis itself is the desktop code, linked (not copied) so both versions always count the same way. -->
+  <ItemGroup>
+    <Compile Include="..\..\src\ChestCounter\ReplayAnalyzer.cs" Link="Shared\ReplayAnalyzer.cs" />
+    <Compile Include="..\..\src\ChestCounter\Models.cs" Link="Shared\Models.cs" />
+    <Compile Include="..\..\src\ChestCounter\Profiles.cs" Link="Shared\Profiles.cs" />
+  </ItemGroup>
+
+  <!--
+    The replay parser finds its types by reflection (attributes, backing fields): the trimmer must keep these
+    assemblies whole, otherwise nothing is decoded once published.
+  -->
+  <ItemGroup>
+    <TrimmerRootAssembly Include="ChestCounter.Web" />
+    <TrimmerRootAssembly Include="FortniteReplayReader" />
+    <TrimmerRootAssembly Include="Unreal.Core" />
+    <TrimmerRootAssembly Include="Unreal.Encryption" />
+    <TrimmerRootAssembly Include="OozSharp" />
+  </ItemGroup>
+</Project>

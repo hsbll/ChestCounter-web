@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ChestCounter Web</title>
+<meta name="description" content="Conta os baús que você abriu no Fortnite a partir dos arquivos de replay. Tudo roda no seu navegador.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='9' width='26' height='18' rx='3' fill='%23e8b04b'/%3E%3Crect x='3' y='15' width='26' height='3' fill='%231b1405'/%3E%3Crect x='14' y='13' width='4' height='7' rx='1' fill='%231b1405'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>ChestCounter <span>Web</span></h1>
+    <p class="sub">Conta os baús dos seus replays do Fortnite. Os arquivos são lidos aqui no navegador e não saem do seu computador.</p>
+  </div>
+  <label class="profile" id="profileBox" hidden>Conta
+    <select id="profile"></select>
+  </label>
+</header>
+
+<main>
+  <section class="card" id="dropCard">
+    <div class="drop" id="drop">
+      <p class="dropTitle">Arraste aqui os arquivos <code>.replay</code>, um <code>.zip</code> com eles ou a pasta inteira</p>
+      <p class="muted path">No PC do jogo eles ficam em <code id="demosPath">%LOCALAPPDATA%\FortniteGame\Saved\Demos</code>
+        <button type="button" class="small" id="copyPath">Copiar caminho</button></p>
+      <p class="muted">Clique em <b>Escolher pasta</b>, cole o caminho na barra de endereço da janela e aperte Enter.</p>
+      <div class="buttons">
+        <button type="button" class="primary" id="pickFiles">Escolher arquivos ou zip</button>
+        <button type="button" id="pickFolder">Escolher pasta</button>
+      </div>
+      <input type="file" id="fileInput" accept=".replay,.zip,application/zip" multiple hidden>
+      <input type="file" id="folderInput" webkitdirectory multiple hidden>
+    </div>
+    <div class="remember" id="rememberBox" hidden>
+      <div class="buttons">
+        <button type="button" class="primary" id="refresh" hidden>Atualizar</button>
+        <button type="button" id="rememberFolder">Lembrar uma pasta…</button>
+        <button type="button" id="forgetFolder" hidden>Esquecer</button>
+      </div>
+      <p class="muted" id="rememberNote">Para reler com um clique: escolha uma pasta e ela fica lembrada neste navegador. O navegador não permite isso para pastas dentro de AppData (onde o Fortnite grava); funciona com uma pasta para onde você copia os replays, como Documentos.</p>
+    </div>
+    <p class="status" id="engineStatus" role="status">Carregando o analisador…</p>
+    <div class="progress" id="progress" hidden><div id="progressBar"></div></div>
+    <ul class="log" id="log" aria-live="polite"></ul>
+  </section>
+
+  <p class="notice" id="storageNotice" hidden>Este navegador não está guardando o histórico (janela anônima ou armazenamento bloqueado). Use <b>Exportar histórico</b> antes de fechar a página.</p>
+
+  <section id="empty" class="card emptyState">
+    <h2>Nenhuma partida ainda</h2>
+    <p>Adicione seus replays acima. Cada partida é contada uma única vez, e o histórico continua aqui mesmo que você apague os arquivos depois.</p>
+  </section>
+
+  <div id="report" hidden>
+    <section class="hero card">
+      <div class="heroMain">
+        <div class="label">Total de baús</div>
+        <div class="big" id="total">0</div>
+        <div class="muted" id="totalNote"></div>
+        <div class="share">
+          <button type="button" class="primary" id="saveImage">Salvar imagem do resumo</button>
+          <label><input type="checkbox" id="imageName" checked> com o nome da conta</label>
+        </div>
+      </div>
+      <dl class="tiles" id="tiles"></dl>
+    </section>
+
+    <section class="card">
+      <h2>Últimos 7 dias</h2>
+      <div class="chart" id="chart" role="img"></div>
+      <div class="tip" id="tip" hidden></div>
+    </section>
+
+    <div class="two">
+      <section class="card">
+        <h2>Baús por tipo</h2>
+        <table id="kinds"></table>
+      </section>
+      <section class="card">
+        <h2>Outros contêineres</h2>
+        <table id="others"></table>
+      </section>
+    </div>
+
+    <section class="card" id="treasureCard">
+      <h2>Tesouros</h2>
+      <div class="scroll"><table id="treasures"></table></div>
+    </section>
+
+    <section class="card" id="matesCard" hidden>
+      <h2>Companheiros</h2>
+      <p class="muted">Os baús dos companheiros vêm do seu replay, que só registra o que acontece perto de você. Por isso são um mínimo (≥).</p>
+      <div class="scroll"><table id="mates"></table></div>
+    </section>
+
+    <section class="card">
+      <h2>Partidas <span class="muted" id="matchesNote"></span></h2>
+      <div class="scroll"><table id="matches"></table></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Ajustes</h2>
+    <div class="settings">
+      <fieldset>
+        <legend>Contar também como baú</legend>
+        <label><input type="checkbox" data-setting="countAmmo"> Caixas de munição</label>
+        <label><input type="checkbox" data-setting="countFood"> Caixas de comida</label>
+        <label><input type="checkbox" data-setting="countCannons"> Canhões de loot</label>
+      </fieldset>
+      <fieldset>
+        <legend>Equipe</legend>
+        <label><input type="checkbox" data-setting="showTeammates"> Mostrar companheiros</label>
+        <label><input type="checkbox" data-setting="countTeammates"> Somar os baús deles ao meu total</label>
+      </fieldset>
+      <fieldset>
+        <legend>Histórico</legend>
+        <label><input type="checkbox" data-setting="includeOld"> Incluir partidas anteriores à v43 <span class="muted">(o programa original não conta)</span></label>
+        <label class="inline">Baús antes do contador <input type="number" id="initial" min="0" step="1" inputmode="numeric"></label>
+      </fieldset>
+    </div>
+    <div class="buttons">
+      <button type="button" id="export">Exportar histórico</button>
+      <button type="button" id="import">Importar histórico</button>
+      <button type="button" class="danger" id="reset">Apagar tudo</button>
+      <input type="file" id="importInput" accept="application/json,.json" hidden>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <p>Versão web não oficial do <a href="https://github.com/xdoofy92/ChestCounter" rel="noopener">ChestCounter</a> (licença MIT), com o mesmo analisador de replays. Sem overlay, sem atualização automática, sem servidor. Não é afiliado à Epic Games.</p>
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

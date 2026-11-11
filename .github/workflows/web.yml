@@ -1,0 +1,77 @@
+name: Web version (GitHub Pages)
+
+# Builds web/ChestCounter.Web (the replay analyzer compiled to WebAssembly) and publishes it with GitHub Pages.
+# One-time setup in the repository: Settings > Pages > Build and deployment > Source = "GitHub Actions".
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'lib/**'
+      - 'src/ChestCounter/ReplayAnalyzer.cs'
+      - 'src/ChestCounter/Models.cs'
+      - 'src/ChestCounter/Profiles.cs'
+      - '.github/workflows/web.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Needed for the ahead-of-time build only; without it the plain build below still works.
+      - name: Install the WebAssembly build tools
+        run: dotnet workload install wasm-tools || echo "::warning::wasm-tools could not be installed, the site will be built without AOT (slower analysis)"
+
+      # AOT makes reading a replay several times faster. If that build fails, publish the interpreted one instead.
+      - name: Publish
+        run: |
+          if dotnet publish web/ChestCounter.Web/ChestCounter.Web.csproj -c Release -p:RunAOTCompilation=true -o out; then
+            echo "Published with AOT."
+          else
+            echo "::warning::AOT build failed, publishing without AOT (slower analysis)"
+            git clean -xdfq
+            dotnet publish web/ChestCounter.Web/ChestCounter.Web.csproj -c Release -o out
+          fi
+
+      - name: Check the published site
+        run: |
+          test -f out/wwwroot/index.html || { echo "::error::index.html is missing from out/wwwroot"; exit 1; }
+          test -f out/wwwroot/_framework/dotnet.js || { echo "::error::_framework/dotnet.js is missing from out/wwwroot"; ls -R out | head -100; exit 1; }
+          du -sh out/wwwroot
+
+      # Starts the published runtime in Node and reads a public sample replay. Informative only: a failure here
+      # shows up as a warning on the run but does not block the deployment.
+      - name: Smoke test
+        continue-on-error: true
+        run: |
+          curl -fsSL -o sample.replay https://raw.githubusercontent.com/Shiqan/FortniteReplayDecompressor/master/src/ConsoleReader/Replays/season11.replay
+          node web/smoke-test.mjs out/wwwroot sample.replay
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out/wwwroot
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
