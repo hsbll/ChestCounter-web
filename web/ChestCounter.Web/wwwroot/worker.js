@@ -1,7 +1,7 @@
 // Runs the .NET replay analyzer off the main thread, so the page stays responsive while a replay is read.
 import { loadAnalyzer } from './runtime.js';
 
-const ready = loadAnalyzer().then(
+const ready = loadAnalyzer((loaded, total) => self.postMessage({ type: 'progress', loaded, total })).then(
     api => { self.postMessage({ type: 'ready', analyzerVersion: api.AnalyzerVersion() }); return api; },
     error => { self.postMessage({ type: 'failed', message: String(error?.message ?? error) }); throw error; });
 

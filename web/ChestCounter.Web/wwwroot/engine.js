@@ -2,12 +2,12 @@
 // it there, it is loaded in the page itself (same result, the page just freezes while a replay is read).
 import { loadAnalyzer } from './runtime.js';
 
-export async function createEngine() {
+export async function createEngine(onProgress = () => {}) {
     try {
-        return await workerEngine();
+        return await workerEngine(onProgress);
     } catch (error) {
         console.warn('Worker indisponível, a análise roda na própria página:', error);
-        const api = await loadAnalyzer();
+        const api = await loadAnalyzer(onProgress);
         return {
             mode: 'page',
             analyzerVersion: api.AnalyzerVersion(),
@@ -20,7 +20,7 @@ export async function createEngine() {
     }
 }
 
-function workerEngine() {
+function workerEngine(onProgress) {
     return new Promise((resolve, reject) => {
         const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
         const pending = new Map();
@@ -38,7 +38,9 @@ function workerEngine() {
         };
         worker.onmessage = event => {
             const message = event.data;
-            if (message.type === 'failed') {
+            if (message.type === 'progress') {
+                onProgress(message.loaded, message.total);
+            } else if (message.type === 'failed') {
                 worker.terminate();
                 reject(new Error(message.message));
             } else if (message.type === 'ready') {

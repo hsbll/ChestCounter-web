@@ -516,12 +516,36 @@ $('reset').addEventListener('click', async () => {
     render();
     if (canRemember) folder = await store.loadFolder();
     renderFolder();
+    // First visit: the analyzer (several megabytes) is downloaded, then started. The buttons wait for it.
+    const bar = $('progressBar');
+    let lastMove = Date.now();
+    $('progress').hidden = false;
+    bar.style.width = '2%';
+    setStatus('Carregando o analisador… os botões são liberados quando terminar.');
+    const slow = setInterval(() => {
+        if (Date.now() - lastMove > 45000) {
+            setStatus('Carregando o analisador… está demorando mais que o normal. Se não avançar, recarregue a página (Ctrl+F5).');
+        }
+    }, 5000);
     try {
-        engine = await createEngine();
+        engine = await createEngine((loaded, total) => {
+            lastMove = Date.now();
+            if (!(total > 0)) return;
+            // The last stretch of the bar is kept for starting the runtime once everything is downloaded.
+            bar.style.width = `${Math.max(2, Math.min(90, (90 * loaded) / total))}%`;
+            setStatus(loaded < total
+                ? `Baixando o analisador… ${loaded} de ${total} arquivos. Os botões são liberados quando terminar.`
+                : 'Iniciando o analisador…');
+        });
+        bar.style.width = '100%';
         setStatus('Pronto para ler replays.');
+        setTimeout(() => { if (!busy) $('progress').hidden = true; }, 800);
     } catch (error) {
+        $('progress').hidden = true;
         console.error(error);
         setStatus(`Não foi possível carregar o analisador (${error.message}). Recarregue a página; se continuar, use um navegador atualizado (Chrome, Edge ou Firefox).`, true);
+    } finally {
+        clearInterval(slow);
     }
     setButtons();
 })();
