@@ -4,7 +4,7 @@
 export async function loadAnalyzer(onProgress, onStage = () => {}) {
     const where = typeof document === 'undefined' ? 'worker' : 'page';
     const stage = name => {
-        console.info(`[ChestCounter] ${where}: ${name}`);
+        console.info(`[Chest Lookout] ${where}: ${name}`);
         try { onStage(name); } catch { /* display only */ }
     };
 
@@ -16,6 +16,11 @@ export async function loadAnalyzer(onProgress, onStage = () => {}) {
         builder = dotnet.withModuleConfig({
             onDownloadResourceProgress: (loaded, total) => { try { onProgress(loaded, total); } catch { /* display only */ } },
         });
+    }
+    // .NET 10 has reports of the interpreter stalling in long loops with its SSA optimisation on; turning it off
+    // costs a little speed in interpreted code only (none in the ahead-of-time compiled build).
+    if (typeof builder.withEnvironmentVariable === 'function') {
+        builder = builder.withEnvironmentVariable('MONO_INTERPRETER_OPTIONS', '-ssa');
     }
     const { getAssemblyExports, getConfig } = await builder.create();
     stage('runtime started, loading the analyzer');

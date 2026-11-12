@@ -10,7 +10,7 @@ export async function createEngine(onProgress = () => {}, onNote = () => {}) {
     try {
         return await workerEngine(onProgress);
     } catch (error) {
-        console.warn('[ChestCounter] worker indisponível, a análise roda na própria página:', error);
+        console.warn('[Chest Lookout] worker indisponível, a análise roda na própria página:', error);
         onNote('fallback');
         const api = await loadAnalyzer(onProgress);
         return {

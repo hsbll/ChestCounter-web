@@ -51,6 +51,11 @@ jobs:
           test -f out/wwwroot/_framework/dotnet.js || { echo "::error::_framework/dotnet.js is missing from out/wwwroot"; ls -R out | head -100; exit 1; }
           du -sh out/wwwroot
 
+      # Version shown in the page footer, and added to the address of every file of the page so that a browser
+      # never mixes files of two versions.
+      - name: Stamp the version
+        run: node web/stamp-version.mjs out/wwwroot "$(date -u +%Y.%m.%d)-${GITHUB_SHA::7}"
+
       # Starts the published runtime in Node and reads a public sample replay. Informative only: a failure here
       # shows up as a warning on the run but does not block the deployment.
       - name: Smoke test

@@ -1,0 +1,51 @@
+name: Update analyzer from the original project
+
+# Fortnite changes the replay format from season to season and the original ChestCounter follows it. Once a week
+# this copies the original's analyzer (lib/ and src/), re-applies the browser changes, checks that the web
+# version still builds and, only then, saves the update and republishes the site.
+# If the update does not fit or does not build, the run fails (GitHub e-mails the repository owner) and the
+# published site stays as it was.
+on:
+  schedule:
+    - cron: '23 9 * * 2'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy the analyzer from the original project
+        id: sync
+        run: bash web/sync-upstream.sh | tee sync.log && tail -n 1 sync.log >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-dotnet@v4
+        if: steps.sync.outputs.changed == 'true'
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Check that the web version still builds
+        if: steps.sync.outputs.changed == 'true'
+        run: dotnet build web/ChestCounter.Web/ChestCounter.Web.csproj -c Release
+
+      - name: Save the update and republish the site
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib src Directory.Build.props LICENSE web/UPSTREAM
+          git commit -m "Update analyzer to upstream $(cut -c1-7 web/UPSTREAM)"
+          git push
+          # A push made by a workflow does not start other workflows: the publication is started by hand.
+          gh workflow run web.yml --ref "${GITHUB_REF_NAME}"

@@ -1,6 +1,6 @@
-# ChestCounter Web
+# Chest Lookout
 
-Versão web do ChestCounter: o **mesmo analisador de replays** do programa de Windows, compilado para WebAssembly.
+Chest Lookout é a versão web, não oficial, do ChestCounter: o **mesmo analisador de replays** do programa de Windows, compilado para WebAssembly.
 Você abre a página, arrasta os arquivos `.replay` (ou a pasta `Demos` inteira) e vê o total de baús, tesouros,
 partidas e companheiros.
 
@@ -11,6 +11,38 @@ partidas e companheiros.
   `src/ChestCounter`, apenas referenciados por este projeto.
 
 O que não existe aqui: contagem ao vivo durante a partida, overlay, página para OBS, abrir junto com o Fortnite.
+
+## O que a página faz
+
+- **Filtros** por período e por modo (solo, duplas, trios, esquadrões): valem para os números, as tabelas e a
+  imagem do resumo.
+- **Detalhe da partida:** clique em uma linha de *Partidas* para ver os baús na ordem em que foram abertos, os
+  tesouros e a equipe. Dali também se exclui a partida (ela não volta se o replay for adicionado de novo).
+- **Duas contas na mesma partida** ficam com um registro cada. Com o replay do companheiro no histórico, o
+  detalhe mostra o número exato dele em vez do mínimo visto.
+- **Imagem do resumo** em três formatos (4:5, 1:1 e 9:16), com ou sem o nome da conta, mostrada numa prévia
+  antes de salvar ou compartilhar.
+- **Proteção do histórico:** a página pede ao navegador para não apagar os dados sozinho, avisa quando há
+  partidas sem backup, baixa um backup antes de *Apagar tudo* e aceita históricos antigos ou danificados sem
+  quebrar.
+- **Copiar diagnóstico** (Ajustes): versão, navegador, modo do analisador e os últimos erros, para pedir ajuda.
+
+## Manter atualizado
+
+O formato dos replays muda com as temporadas, e o projeto original acompanha. O workflow **Update analyzer from
+the original project** roda toda semana (ou à mão, em Actions): copia `lib/` e `src/` do original, reaplica as
+mudanças do navegador (`web/patches/browser.patch`), confere que a versão web compila e só então salva e
+republica. Se algo não encaixar, a execução falha, o GitHub avisa por e-mail e o site publicado fica como estava.
+
+Cada publicação grava a versão no rodapé da página e no endereço dos arquivos, para o navegador não misturar
+arquivos de duas versões.
+
+## Visual
+
+Estilo pixel / CRT com toques de battle royale: fundo azul-noite com roxo de tempestade, azul elétrico e
+amarelo neon, botões e etiquetas inclinados, faixas nas cores de raridade (só decoração), bordas quadradas e
+linhas de varredura (a animação de cintilação some com "reduzir movimento" no sistema). As fontes Press Start 2P,
+Silkscreen e VT323 (licença OFL) ficam em `wwwroot/fonts` e são servidas pelo próprio site.
 
 ## Publicar no GitHub Pages
 
@@ -44,7 +76,7 @@ navegador só carrega WebAssembly por `http://`.
 **Zip:** em vez de arquivos soltos, dá para escolher ou arrastar um `.zip` com os replays (também dentro de
 subpastas). Os arquivos são descompactados um por vez no navegador; zip com senha não é aceito.
 
-**Imagem do resumo:** o botão **Salvar imagem do resumo** gera um PNG (1080 × 1350) com o total, as principais
+**Imagem do resumo:** o botão **Imagem do resumo** abre uma prévia do PNG (1080 de largura) com o total, as principais
 estatísticas e os últimos 7 dias. O nome da conta só entra se a caixa ao lado estiver marcada.
 
 **Chegar na pasta:** o botão **Copiar caminho** copia `%LOCALAPPDATA%\FortniteGame\Saved\Demos` (o Windows troca
@@ -68,4 +100,5 @@ quando ela terminar.
 | `ChestCounter.Web/wwwroot/engine.js`, `worker.js`, `runtime.js` | Carregam o runtime .NET (em um worker) e expõem `analyze(file)`. |
 | `ChestCounter.Web/wwwroot/app.js`, `stats.js`, `store.js` | Página, estatísticas e histórico. |
 | `ChestCounter.Web/wwwroot/zip.js`, `summary-image.js` | Leitura de `.zip` e imagem do resumo. |
-| `smoke-test.mjs` | Teste rápido do site publicado, usado pelo workflow. |
+| `smoke-test.mjs`, `stamp-version.mjs` | Teste rápido e carimbo de versão do site publicado, usados pelo workflow. |
+| `sync-upstream.sh`, `patches/browser.patch`, `UPSTREAM` | Atualização do analisador a partir do projeto original. |

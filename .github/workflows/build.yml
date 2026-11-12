@@ -1,8 +1,7 @@
 name: Build ChestCounter.exe
+# Windows program of the original project. Not needed for the web version: it only runs when started by hand
+# (Actions > Build ChestCounter.exe > Run workflow).
 on:
-  push:
-    branches: ['**']
-    tags: ['v*']
   workflow_dispatch:
 permissions:
   contents: read

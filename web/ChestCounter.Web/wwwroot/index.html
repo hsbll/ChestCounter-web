@@ -3,15 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ChestCounter Web</title>
+<meta name="theme-color" content="#050a14">
+<title>Chest Lookout</title>
 <meta name="description" content="Conta os baús que você abriu no Fortnite a partir dos arquivos de replay. Tudo roda no seu navegador.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='9' width='26' height='18' rx='3' fill='%23e8b04b'/%3E%3Crect x='3' y='15' width='26' height='3' fill='%231b1405'/%3E%3Crect x='14' y='13' width='4' height='7' rx='1' fill='%231b1405'/%3E%3C/svg%3E">
+<!-- Replaced by the build (web/stamp-version.mjs) with the commit being published. -->
+<meta name="app-version" content="dev">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'%3E%3Crect x='1' y='4' width='14' height='10' fill='%23050a14'/%3E%3Crect x='2' y='5' width='12' height='3' fill='%23fcf400'/%3E%3Crect x='2' y='9' width='12' height='4' fill='%23a39b00'/%3E%3Crect x='2' y='8' width='12' height='1' fill='%23050a14'/%3E%3Crect x='7' y='7' width='2' height='3' fill='%2327c2ff'/%3E%3C/svg%3E">
+<link rel="preload" href="fonts/vt323-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/silkscreen-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/press-start-2p-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="top">
   <div>
-    <h1>ChestCounter <span>Web</span></h1>
+    <h1>Chest <span>Lookout</span></h1>
     <p class="sub">Conta os baús dos seus replays do Fortnite. Os arquivos são lidos aqui no navegador e não saem do seu computador.</p>
   </div>
   <label class="profile" id="profileBox" hidden>Conta
@@ -47,6 +53,8 @@
   </section>
 
   <p class="notice" id="storageNotice" hidden>Este navegador não está guardando o histórico (janela anônima ou armazenamento bloqueado). Use <b>Exportar histórico</b> antes de fechar a página.</p>
+  <p class="notice" id="backupNotice" hidden><span id="backupText"></span> <button type="button" class="small" id="backupNow">Exportar agora</button></p>
+  <p class="notice" id="renderError" hidden></p>
 
   <section id="empty" class="card emptyState">
     <h2>Nenhuma partida ainda</h2>
@@ -54,14 +62,30 @@
   </section>
 
   <div id="report" hidden>
+    <div class="filters">
+      <label>Período
+        <select id="period">
+          <option value="all">Tudo</option>
+          <option value="today">Hoje</option>
+          <option value="7">Últimos 7 dias</option>
+          <option value="30">Últimos 30 dias</option>
+          <option value="month">Este mês</option>
+          <option value="year">Este ano</option>
+        </select>
+      </label>
+      <label>Modo
+        <select id="size"></select>
+      </label>
+      <span class="muted" id="filterNote"></span>
+    </div>
+
     <section class="hero card">
       <div class="heroMain">
         <div class="label">Total de baús</div>
         <div class="big" id="total">0</div>
         <div class="muted" id="totalNote"></div>
         <div class="share">
-          <button type="button" class="primary" id="saveImage">Salvar imagem do resumo</button>
-          <label><input type="checkbox" id="imageName" checked> com o nome da conta</label>
+          <button type="button" class="primary" id="openImage">Imagem do resumo</button>
         </div>
       </div>
       <dl class="tiles" id="tiles"></dl>
@@ -97,7 +121,9 @@
 
     <section class="card">
       <h2>Partidas <span class="muted" id="matchesNote"></span></h2>
-      <div class="scroll"><table id="matches"></table></div>
+      <p class="muted">Clique em uma partida para ver os baús um a um.</p>
+      <div class="scroll"><table id="matches" class="clickable"></table></div>
+      <div class="buttons"><button type="button" id="moreMatches" hidden>Mostrar mais</button></div>
     </section>
   </div>
 
@@ -121,17 +147,49 @@
         <label class="inline">Baús antes do contador <input type="number" id="initial" min="0" step="1" inputmode="numeric"></label>
       </fieldset>
     </div>
+    <p class="muted" id="storageState"></p>
     <div class="buttons">
       <button type="button" id="export">Exportar histórico</button>
       <button type="button" id="import">Importar histórico</button>
+      <button type="button" id="copyDiag">Copiar diagnóstico</button>
       <button type="button" class="danger" id="reset">Apagar tudo</button>
       <input type="file" id="importInput" accept="application/json,.json" hidden>
     </div>
   </section>
 </main>
 
+<dialog id="matchDialog" aria-labelledby="matchTitle">
+  <h2 id="matchTitle"></h2>
+  <div id="matchBody"></div>
+  <div class="buttons">
+    <button type="button" class="primary" id="matchClose">Fechar</button>
+    <button type="button" class="danger" id="matchDelete">Excluir esta partida</button>
+  </div>
+</dialog>
+
+<dialog id="imageDialog" class="imageDialog" aria-labelledby="imageTitle">
+  <h2 id="imageTitle">Imagem do resumo</h2>
+  <div class="imageOptions">
+    <label>Formato
+      <select id="imageFormat">
+        <option value="portrait">Retrato (4:5)</option>
+        <option value="square">Quadrado (1:1)</option>
+        <option value="story">Story (9:16)</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="imageName" checked> com o nome da conta</label>
+  </div>
+  <div class="preview"><img id="imagePreview" alt="Prévia da imagem do resumo"><p class="muted" id="imageBusy">Gerando a imagem…</p></div>
+  <div class="buttons">
+    <button type="button" class="primary" id="saveImage">Salvar imagem</button>
+    <button type="button" id="shareImage" hidden>Compartilhar</button>
+    <button type="button" id="imageClose">Fechar</button>
+  </div>
+</dialog>
+
 <footer>
-  <p>Versão web não oficial do <a href="https://github.com/xdoofy92/ChestCounter" rel="noopener">ChestCounter</a> (licença MIT), com o mesmo analisador de replays. Sem overlay, sem atualização automática, sem servidor. Não é afiliado à Epic Games.</p>
+  <p>Chest Lookout é uma ferramenta não oficial baseada no <a href="https://github.com/xdoofy92/ChestCounter" rel="noopener">ChestCounter</a> (licença MIT), com o mesmo analisador de replays. Sem overlay, sem atualização automática, sem servidor. Não é afiliado à Epic Games. Fontes Press Start 2P, Silkscreen e VT323 (licença <a href="fonts/LICENSE-fonts.txt">OFL</a>).</p>
+  <p id="appVersion"></p>
 </footer>
 
 <script type="module" src="app.js"></script>
