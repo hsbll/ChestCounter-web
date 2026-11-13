@@ -25,6 +25,17 @@ O que não existe aqui: contagem ao vivo durante a partida, overlay, página par
 - **Proteção do histórico:** a página pede ao navegador para não apagar os dados sozinho, avisa quando há
   partidas sem backup, baixa um backup antes de *Apagar tudo* e aceita históricos antigos ou danificados sem
   quebrar.
+- **Listas curtas:** partidas, tesouros e companheiros mostram poucas linhas, com "Mostrar mais / menos".
+- **Gráfico de 7 ou 30 dias**, baús **por modo**, resumo de **tesouros por tipo** e a **parte de cada
+  companheiro** nos baús do time.
+- **Exportar sem os IDs Epic dos companheiros** (Ajustes), para mandar o histórico a outra pessoa.
+- **Analisador guardado no navegador** (`sw.js`): só a primeira visita depois de cada atualização baixa tudo.
+- **Abas** (Resumo, Tempestade, Gráficos, Listas) para a página não ficar comprida.
+- **Tempestade:** para cada baú e tesouro, se você estava na zona segura ou dentro da tempestade, com as
+  porcentagens em texto e em barras (no total, por fase e por partida) e um mapa dos pontos. É uma análise só da
+  versão web (`Storm.cs`): lê o replay uma segunda vez, no modo completo do leitor, por isso a leitura demora
+  mais. Partidas lidas antes dela precisam do replay de novo.
+- **Gráficos:** baús por minuto de partida, por dia da semana e hora, e recordes.
 - **Copiar diagnóstico** (Ajustes): versão, navegador, modo do analisador e os últimos erros, para pedir ajuda.
 
 ## Manter atualizado
@@ -95,6 +106,7 @@ quando ela terminar.
 | Arquivo | Função |
 |---|---|
 | `ChestCounter.Web/Analysis.cs` | Recebe os bytes do replay, chama `ReplayAnalyzer` e devolve JSON. |
+| `ChestCounter.Web/Storm.cs` | Posição do jogador e estado da tempestade em cada baú e tesouro. |
 | `ChestCounter.Web/Interop.cs` | Funções exportadas para o JavaScript (`[JSExport]`). |
 | `ChestCounter.Web/Shims.cs` | Substitutos mínimos das classes de desktop citadas pelos arquivos compartilhados. |
 | `ChestCounter.Web/wwwroot/engine.js`, `worker.js`, `runtime.js` | Carregam o runtime .NET (em um worker) e expõem `analyze(file)`. |

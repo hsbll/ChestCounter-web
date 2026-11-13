@@ -101,31 +101,70 @@ export function build(data, filter = {}, now = new Date()) {
         if (!bestDay || chests > bestDay.chests) bestDay = { key, chests };
     }
 
-    const lastDays = [];
-    for (let i = 6; i >= 0; i--) {
+    const days30 = [];
+    for (let i = 29; i >= 0; i--) {
         const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
-        lastDays.push({ date, chests: perDay.get(dayKey(date)) ?? 0 });
+        days30.push({ date, chests: perDay.get(dayKey(date)) ?? 0 });
     }
+    const lastDays = days30.slice(-7);
 
     const byKind = new Map();
     const others = new Map();
     const treasures = [];
     const mates = new Map();
-    for (const { m, date } of rows) {
+    for (const { m, date, own, mates: teamSeen } of rows) {
         for (const chest of m.chests ?? []) byKind.set(chest.kind, (byKind.get(chest.kind) ?? 0) + 1);
         for (const [kind, n] of Object.entries(m.otherInteractions ?? {})) others.set(kind, (others.get(kind) ?? 0) + n);
         for (const find of m.treasureFinds ?? []) treasures.push({ find, m, date });
         for (const mate of m.teammates ?? []) {
             const key = mate.epicId || mate.name;
-            const entry = mates.get(key) ?? { name: mate.name, matches: 0, wins: 0, seen: 0, best: 0 };
+            const entry = mates.get(key) ?? { name: mate.name, matches: 0, wins: 0, seen: 0, best: 0, team: 0 };
             const seen = mateSeen(mate, extraKinds(settings));
             entry.name = entry.name || mate.name;
             entry.matches++;
             entry.seen += seen;
+            entry.team += own + teamSeen; // everything the team was seen opening in the matches together
             entry.best = Math.max(entry.best, seen);
             if (m.placement === 1) entry.wins++;
             mates.set(key, entry);
         }
+    }
+
+    // Storm: where the player stood when each chest / treasure was taken (only real chests carry a position).
+    const storm = { chests: { in: 0, out: 0, unknown: 0 }, treasures: { in: 0, out: 0, unknown: 0 }, phases: new Map(), points: [], matches: 0 };
+    const minutes = [];
+    const heat = Array.from({ length: 7 }, () => new Array(24).fill(0));
+    for (const row of rows) {
+        row.storm = stormOf(row.m);
+        if (row.storm) storm.matches++;
+        for (const chest of row.m.chests ?? []) {
+            const minute = Math.max(0, Math.floor((chest.timeSeconds ?? 0) / 60));
+            minutes[minute] = (minutes[minute] ?? 0) + 1;
+            const spot = chest.storm;
+            if (!spot || spot.inStorm == null) { storm.chests.unknown++; continue; }
+            storm.chests[spot.inStorm ? 'in' : 'out']++;
+            const phase = storm.phases.get(spot.phase ?? 0) ?? { in: 0, out: 0 };
+            phase[spot.inStorm ? 'in' : 'out']++;
+            storm.phases.set(spot.phase ?? 0, phase);
+            storm.points.push({ x: spot.x, y: spot.y, inStorm: spot.inStorm });
+        }
+        for (const find of row.m.treasureFinds ?? []) {
+            const spot = find.storm;
+            if (!spot || spot.inStorm == null) storm.treasures.unknown++;
+            else storm.treasures[spot.inStorm ? 'in' : 'out']++;
+        }
+        if (row.date.getTime() > 0) heat[row.date.getDay()][row.date.getHours()] += row.total;
+    }
+    for (let i = 0; i < minutes.length; i++) minutes[i] ??= 0;
+
+    // Longest run of consecutive days with at least one match.
+    let streak = 0, run = 0, previous = null;
+    for (const key of [...perDay.keys()].sort()) {
+        const [y, mo, d] = key.split('-').map(Number);
+        const day = Date.UTC(y, mo - 1, d) / 86400000;
+        run = previous != null && day - previous === 1 ? run + 1 : 1;
+        streak = Math.max(streak, run);
+        previous = day;
     }
 
     const sum = rows.reduce((total, row) => total + row.total, 0);
@@ -151,6 +190,13 @@ export function build(data, filter = {}, now = new Date()) {
         // Oldest match with a known date (a record without one sorts last, at 1970).
         since: rows.filter(row => row.date.getTime() > 0).at(-1)?.date ?? null,
         lastDays,
+        days30,
+        storm: { ...storm, phases: [...storm.phases.entries()].sort((a, b) => a[0] - b[0]) },
+        minutes,
+        heat,
+        streak,
+        mostTreasures: rows.reduce((best, row) => Math.max(best, row.m.treasureFinds?.length ?? 0), 0),
+        mostInStorm: rows.reduce((best, row) => Math.max(best, row.storm?.in ?? 0), 0),
         byKind: [...byKind.entries()].sort((a, b) => b[1] - a[1]),
         others: [...others.entries()].sort((a, b) => b[1] - a[1]),
         treasures,
@@ -165,4 +211,14 @@ export function build(data, filter = {}, now = new Date()) {
 export function teammateRecord(data, match, mate) {
     if (!mate.epicId) return null;
     return Object.values(data.matches).map(e => e.match).find(m => m.sessionId === match.sessionId && m.epicId === mate.epicId) ?? null;
+}
+
+/** Chests of one match by where they were opened: { in, out, known } or null when the match has no storm data. */
+export function stormOf(match) {
+    let inside = 0, out = 0;
+    for (const chest of match.chests ?? []) {
+        if (chest.storm?.inStorm === true) inside++;
+        else if (chest.storm?.inStorm === false) out++;
+    }
+    return inside + out > 0 ? { in: inside, out, known: inside + out } : null;
 }

@@ -79,6 +79,14 @@
       <span class="muted" id="filterNote"></span>
     </div>
 
+    <div class="tabs" role="tablist" aria-label="Seções do relatório">
+      <button type="button" role="tab" id="tab-resumo" data-tab-button="resumo">Resumo</button>
+      <button type="button" role="tab" id="tab-tempestade" data-tab-button="tempestade">Tempestade</button>
+      <button type="button" role="tab" id="tab-graficos" data-tab-button="graficos">Gráficos</button>
+      <button type="button" role="tab" id="tab-listas" data-tab-button="listas">Listas</button>
+    </div>
+
+    <div data-tab="resumo">
     <section class="hero card">
       <div class="heroMain">
         <div class="label">Total de baús</div>
@@ -92,7 +100,10 @@
     </section>
 
     <section class="card">
-      <h2>Últimos 7 dias</h2>
+      <div class="cardHead">
+        <h2 id="chartTitle">Últimos 7 dias</h2>
+        <label>Mostrar <select id="chartDays"><option value="7">7 dias</option><option value="30">30 dias</option></select></label>
+      </div>
       <div class="chart" id="chart" role="img"></div>
       <div class="tip" id="tip" hidden></div>
     </section>
@@ -100,31 +111,85 @@
     <div class="two">
       <section class="card">
         <h2>Baús por tipo</h2>
-        <table id="kinds"></table>
+        <div class="scroll"><table id="kinds"></table></div>
       </section>
       <section class="card">
         <h2>Outros contêineres</h2>
-        <table id="others"></table>
+        <div class="scroll"><table id="others"></table></div>
       </section>
     </div>
 
+    <section class="card">
+      <h2>Por modo</h2>
+      <div class="scroll"><table id="modes"></table></div>
+    </section>
+
+    </div>
+
+    <div data-tab="tempestade">
+      <section class="card">
+        <h2>Dentro e fora da tempestade</h2>
+        <p id="stormText"></p>
+        <div id="stormBars"></div>
+        <p class="muted" id="stormNote"></p>
+      </section>
+      <section class="card">
+        <h2>Por fase da tempestade</h2>
+        <p id="phaseText"></p>
+        <div id="stormPhases"></div>
+        <p class="muted">Fase 0 é antes de o primeiro círculo começar a fechar; a fase 1 começa quando ele fecha pela primeira vez.</p>
+      </section>
+      <section class="card">
+        <h2>Mapa dos baús</h2>
+        <p id="mapText"></p>
+        <div id="stormMap"></div>
+        <p class="muted">Cada ponto é onde você estava ao abrir um baú. O desenho não tem o mapa do jogo por baixo, e a orientação (norte para cima) é aproximada.</p>
+      </section>
+    </div>
+
+    <div data-tab="graficos">
+      <section class="card">
+        <h2>Ritmo da partida</h2>
+        <p id="rhythmText"></p>
+        <div class="chart dense" id="rhythm" role="img"></div>
+        <div class="axis dense" id="rhythmAxis" aria-hidden="true"></div>
+        <p class="muted">Minutos contados desde o início da gravação do replay, que inclui a espera e o ônibus.</p>
+      </section>
+      <section class="card">
+        <h2>Dias e horários</h2>
+        <p id="heatText"></p>
+        <div class="scroll"><div class="heat" id="heat" role="img"></div></div>
+        <p class="muted">Baús por dia da semana e hora de início da partida, no seu horário. Quanto mais claro, mais baús.</p>
+      </section>
+      <section class="card">
+        <h2>Recordes</h2>
+        <dl class="tiles" id="records"></dl>
+      </section>
+    </div>
+
+    <div data-tab="listas">
     <section class="card" id="treasureCard">
       <h2>Tesouros</h2>
+      <p class="muted" id="treasureSummary"></p>
+      <p class="chips" id="treasureTypes"></p>
       <div class="scroll"><table id="treasures"></table></div>
+      <div class="buttons pager"><button type="button" id="more-treasures" hidden></button><button type="button" id="less-treasures" hidden>Mostrar menos</button></div>
     </section>
 
     <section class="card" id="matesCard" hidden>
       <h2>Companheiros</h2>
       <p class="muted">Os baús dos companheiros vêm do seu replay, que só registra o que acontece perto de você. Por isso são um mínimo (≥).</p>
       <div class="scroll"><table id="mates"></table></div>
+      <div class="buttons pager"><button type="button" id="more-mates" hidden></button><button type="button" id="less-mates" hidden>Mostrar menos</button></div>
     </section>
 
     <section class="card">
       <h2>Partidas <span class="muted" id="matchesNote"></span></h2>
       <p class="muted">Clique em uma partida para ver os baús um a um.</p>
       <div class="scroll"><table id="matches" class="clickable"></table></div>
-      <div class="buttons"><button type="button" id="moreMatches" hidden>Mostrar mais</button></div>
+      <div class="buttons pager"><button type="button" id="more-matches" hidden></button><button type="button" id="less-matches" hidden>Mostrar menos</button></div>
     </section>
+    </div>
   </div>
 
   <section class="card">
@@ -144,6 +209,7 @@
       <fieldset>
         <legend>Histórico</legend>
         <label><input type="checkbox" data-setting="includeOld"> Incluir partidas anteriores à v43 <span class="muted">(o programa original não conta)</span></label>
+        <label><input type="checkbox" data-setting="anonymousExport"> Exportar sem os IDs Epic dos companheiros</label>
         <label class="inline">Baús antes do contador <input type="number" id="initial" min="0" step="1" inputmode="numeric"></label>
       </fieldset>
     </div>

@@ -7,7 +7,7 @@ const ready = loadAnalyzer(
     (loaded, total) => self.postMessage({ type: 'progress', loaded, total }),
     name => self.postMessage({ type: 'stage', name }),
 ).then(
-    api => { self.postMessage({ type: 'ready', analyzerVersion: api.AnalyzerVersion() }); return api; },
+    api => { self.postMessage({ type: 'ready', analyzerVersion: api.AnalyzerVersion(), stormVersion: api.StormVersion?.() ?? 0 }); return api; },
     error => { self.postMessage({ type: 'failed', message: String(error?.message ?? error) }); throw error; });
 ready.catch(() => { /* reported above */ });
 

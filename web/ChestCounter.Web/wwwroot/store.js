@@ -11,13 +11,14 @@ export function emptyData() {
     return {
         version: DATA_VERSION,
         analyzerVersion: 0,
+        stormVersion: 0,
         matches: {},   // matchKey -> { supported, match }
         files: {},     // file key -> matchKey, or the reason it was skipped
         removed: {},   // matchKey -> true: matches deleted by hand, not added again by a later import
         backup: { at: null, matches: 0 },  // last export: when, and how many matches it held
         settings: {
             profile: null, countAmmo: false, countFood: false, countCannons: false,
-            showTeammates: false, countTeammates: false, includeOld: false, initialChests: {},
+            showTeammates: false, countTeammates: false, includeOld: false, anonymousExport: false, initialChests: {},
         },
     };
 }
@@ -67,6 +68,7 @@ export function cleanMatch(raw) {
         totalPlayers: numberOrNull(raw.totalPlayers),
         eliminations: numberOrNull(raw.eliminations),
         analyzerVersion: count(raw.analyzerVersion),
+        stormVersion: count(raw.stormVersion),
         chestsOpened: count(raw.chestsOpened),
         ammoBoxesOpened: count(raw.ammoBoxesOpened),
         otherInteractions: counters(raw.otherInteractions),
@@ -80,6 +82,7 @@ export function normalize(raw) {
     const data = emptyData();
     if (!isObject(raw)) return data;
     if (Number.isFinite(raw.analyzerVersion)) data.analyzerVersion = raw.analyzerVersion;
+    if (Number.isFinite(raw.stormVersion)) data.stormVersion = raw.stormVersion;
 
     // Records are re-keyed on the way in: version 1 used the session id alone.
     const renamed = new Map();

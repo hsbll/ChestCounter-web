@@ -14,4 +14,8 @@ public static partial class Interop
     /// <summary>Version of the analysis: a replay analyzed by an older one is worth reading again.</summary>
     [JSExport]
     internal static int AnalyzerVersion() => ReplayAnalyzer.CurrentVersion;
+
+    /// <summary>Version of the web-only storm analysis (same idea).</summary>
+    [JSExport]
+    internal static int StormVersion() => StormAnalyzer.Version;
 }

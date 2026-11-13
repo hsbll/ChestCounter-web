@@ -1,21 +1,28 @@
-// One analyze(file) function for the page. The analyzer normally lives in a worker; if it cannot start there
-// (error, or no sign of life), it is loaded in the page itself: same result, the page just freezes for a moment
-// while a replay is read.
+// One analyze(file) function for the page. The analyzer runs in the page itself (the page freezes for a moment
+// while a replay is read); a worker version exists behind ?worker=1, with a fallback to the page if it stalls.
 import { loadAnalyzer } from './runtime.js';
 
 /** How long the worker may stay silent: before the runtime download shows progress, and once it does. */
 const QUIET_START_MS = 20000, QUIET_DOWNLOAD_MS = 120000;
 
 export async function createEngine(onProgress = () => {}, onNote = () => {}) {
+    // On the published site the .NET runtime downloads its files in a worker but never finishes starting there,
+    // while it starts fine in the page. So the page is the default; the worker stays available for testing
+    // with ?worker=1 in the address.
+    const tryWorker = new URLSearchParams(location.search).get('worker') === '1';
     try {
+        if (!tryWorker) throw null;
         return await workerEngine(onProgress);
     } catch (error) {
-        console.warn('[Chest Lookout] worker indisponível, a análise roda na própria página:', error);
-        onNote('fallback');
+        if (error) {
+            console.warn('[Chest Lookout] worker indisponível, a análise roda na própria página:', error);
+            onNote('fallback');
+        }
         const api = await loadAnalyzer(onProgress);
         return {
             mode: 'page',
             analyzerVersion: api.AnalyzerVersion(),
+            stormVersion: api.StormVersion?.() ?? 0,
             analyze: async file => {
                 const bytes = new Uint8Array(await file.arrayBuffer());
                 await new Promise(resolve => setTimeout(resolve, 30)); // let the progress text paint first
@@ -62,6 +69,7 @@ function workerEngine(onProgress) {
                 resolve({
                     mode: 'worker',
                     analyzerVersion: message.analyzerVersion,
+                    stormVersion: message.stormVersion ?? 0,
                     analyze: async file => {
                         const buffer = await file.arrayBuffer();
                         const id = nextId++;

@@ -12,6 +12,9 @@ public sealed class AnalysisResult
     /// <summary>False for a Fortnite version the desktop tool does not count either (before v43).</summary>
     public bool SupportedVersion { get; set; }
     public MatchRecord? Match { get; set; }
+    /// <summary>Positions and storm state for the chests and treasures of <see cref="Match"/> (web-only analysis).</summary>
+    public StormInfo? Storm { get; set; }
+    public int StormVersion { get; set; } = StormAnalyzer.Version;
 }
 
 [JsonSourceGenerationOptions(
@@ -44,7 +47,20 @@ public static class WebAnalyzer
             // Same call as the desktop tool: the player who recorded the replay is the one counted.
             var match = new ReplayAnalyzer().Analyze(stream, fileName, "");
             match.ReplayFile = fileName;
-            return new AnalysisResult { Status = "ok", Match = match, SupportedVersion = Profiles.IsSupportedVersion(match) };
+            var result = new AnalysisResult { Status = "ok", Match = match, SupportedVersion = Profiles.IsSupportedVersion(match) };
+            if (match.IsBattleRoyale && match.Chests.Count + match.TreasureFinds.Count > 0)
+            {
+                try
+                {
+                    result.Storm = StormAnalyzer.Analyze(data, match);
+                }
+                catch (Exception ex)
+                {
+                    // The count above stands on its own: a failure here only leaves the match without storm data.
+                    result.Storm = new StormInfo { Note = $"{ex.GetType().Name}: {ex.Message}" };
+                }
+            }
+            return result;
         }
         catch (Exception ex)
         {
