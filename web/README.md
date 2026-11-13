@@ -35,6 +35,10 @@ O que não existe aqui: contagem ao vivo durante a partida, overlay, página par
   porcentagens em texto e em barras (no total, por fase e por partida) e um mapa dos pontos. É uma análise só da
   versão web (`Storm.cs`): lê o replay uma segunda vez, no modo completo do leitor, por isso a leitura demora
   mais. Partidas lidas antes dela precisam do replay de novo.
+- **Mapa** (`map.js`): pontos dos baús com cor por tempestade, tipo, fase ou momento; só tesouros; calor dos
+  baús; calor da rota (por onde você andou); onde você pousa (primeiro baú de cada partida). Dá para aproximar,
+  arrastar e tocar num ponto para ver o baú. O detalhe de cada partida tem o mapa dela, com a rota e os baús
+  numerados. Não há imagem do mapa do jogo por baixo.
 - **Gráficos:** baús por minuto de partida, por dia da semana e hora, e recordes.
 - **Copiar diagnóstico** (Ajustes): versão, navegador, modo do analisador e os últimos erros, para pedir ajuda.
 

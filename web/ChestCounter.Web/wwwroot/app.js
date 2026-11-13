@@ -3,6 +3,7 @@ import * as store from './store.js';
 import * as stats from './stats.js';
 import { listReplays } from './zip.js';
 import { drawSummary, loadFonts } from './summary-image.js';
+import { createMap } from './map.js';
 
 const $ = id => document.getElementById(id);
 const fmt = new Intl.NumberFormat('pt-BR');
@@ -194,6 +195,7 @@ function draw() {
     drawChart(chartDays === 30 ? s.days30 : s.lastDays);
     drawTabs();
     drawStorm(s);
+    drawMap(s);
     drawExtras(s);
 
     const chestTotal = s.byKind.reduce((sum, [, n]) => sum + n, 0);
@@ -314,9 +316,8 @@ function drawStorm(s) {
     if (known === 0) {
         $('stormText').textContent = 'Ainda não há dados de tempestade para as partidas mostradas.';
         $('stormBars').replaceChildren();
-        $('phaseText').textContent = $('mapText').textContent = 'Sem dados ainda.';
+        $('phaseText').textContent = 'Sem dados ainda.';
         $('stormPhases').replaceChildren();
-        $('stormMap').replaceChildren();
     } else {
         const sentences = [`Dos ${plural(known, 'baú', 'baús')} com posição conhecida, ${fmt.format(chests.out)} (${pct(chests.out, known)}) foram abertos na zona segura e ${fmt.format(chests.in)} (${pct(chests.in, known)}) dentro da tempestade.`];
         sentences.push(knownTreasures
@@ -331,27 +332,131 @@ function drawStorm(s) {
             + (worst && worst[1].in > 0 ? ` A maior parte dentro da tempestade é na fase ${worst[0]}: ${pct(worst[1].in, worst[1].in + worst[1].out)}.` : '');
         const most = Math.max(...phases.map(([, p]) => p.in + p.out));
         $('stormPhases').replaceChildren(...phases.map(([phase, p]) => splitBar(`Fase ${phase}`, p.out, p.in, (p.in + p.out) / most)));
-
-        // Scatter of the spots, same scale on both axes. World X points up, world Y to the right.
-        const xs = points.map(p => p.x), ys = points.map(p => p.y);
-        const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-        const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1) * 1.08;
-        const dots = points.map(p => svg('circle', {
-            cx: (200 + ((p.y - cy) / span) * 400).toFixed(1), cy: (200 - ((p.x - cx) / span) * 400).toFixed(1), r: 4,
-            class: p.inStorm ? 'storm' : 'safe',
-        }));
-        const grid = [];
-        for (let i = 1; i < 8; i++) grid.push(svg('line', { x1: i * 50, y1: 0, x2: i * 50, y2: 400 }), svg('line', { x1: 0, y1: i * 50, x2: 400, y2: i * 50 }));
-        $('stormMap').replaceChildren(
-            svg('svg', { viewBox: '0 0 400 400', class: 'map', role: 'img', 'aria-label': `Mapa com ${points.length} pontos: ${chests.out} na zona segura e ${chests.in} na tempestade` }, svg('g', { class: 'grid' }, ...grid), ...dots),
-            el('div', { class: 'splitText' }, el('span', { class: 'key safe' }), el('span', { text: `Zona segura (${fmt.format(chests.out)})` }), el('span', { class: 'key storm' }), el('span', { text: `Tempestade (${fmt.format(chests.in)})` })));
-        $('mapText').textContent = `${plural(points.length, 'ponto', 'pontos')} de ${plural(matches, 'partida', 'partidas')}.`;
     }
     const missing = s.matches - matches;
     $('stormNote').textContent = [
         missing > 0 ? `${plural(missing, 'partida mostrada não tem', 'partidas mostradas não têm')} dados de tempestade: foram lidas antes desta função existir (adicione os replays de novo, se ainda os tiver) ou o replay não trouxe a posição.` : '',
         'Vale para baús de verdade (não caixas de munição). Enquanto o círculo está fechando a borda é calculada, então um baú aberto bem em cima dela pode cair do lado errado.',
     ].filter(Boolean).join(' ');
+}
+
+// ---- map ------------------------------------------------------------------------------------------------
+// Colours checked with the dataviz validator against the map surface (dark): the safe / storm pair, and the
+// four chest kinds in this order. Storm markers are also drawn hollow, so colour is not the only cue.
+const MAP_SAFE = '#1c9bd6', MAP_STORM = '#b44dff', MAP_TREASURE = '#fcf400';
+const MAP_KINDS = [['Chest', 'Baú', '#2f8fe6'], ['Rare chest', 'Baú raro', '#a88d00'], ['Extraction / relic chest', 'Extração / relíquia', '#a05ae8'], [null, 'Outros', '#d9582f']];
+/** One hue, dark to light: early to late. */
+const ramp = fraction => `hsl(197, 90%, ${Math.round(28 + 52 * Math.min(1, Math.max(0, fraction)))}%)`;
+const mapState = { mode: 'points', color: 'storm', treasures: false };
+let mainMap = null;
+
+function pointColor(point, by) {
+    if (by === 'kind') return (MAP_KINDS.find(([kind]) => kind === point.kind) ?? MAP_KINDS[3])[2];
+    if (by === 'phase') return ramp(point.phase / 7);
+    if (by === 'time') return ramp(point.t / 1200);
+    return point.inStorm ? MAP_STORM : MAP_SAFE;
+}
+const chestMarker = (point, by) => ({ x: point.x, y: point.y, color: pointColor(point, by), shape: point.inStorm ? 'hollow' : 'square', data: point });
+const treasureMarker = point => ({ x: point.x, y: point.y, color: MAP_TREASURE, shape: 'diamond', data: point });
+const legendItem = (color, text, shape = '') => [el('span', { class: `key ${shape}`, style: `background:${color}` }), el('span', { text })];
+
+function showPick(point) {
+    const box = $('mapPick');
+    box.hidden = !point;
+    if (!point) return;
+    const whereText = point.inStorm == null ? 'sem dado de tempestade'
+        : (point.inStorm ? 'dentro da tempestade' : 'na zona segura') + (point.edge != null ? `, a ${fmt.format(Math.abs(Math.round(point.edge)))} m da borda` : '') + ` · fase ${point.phase}`;
+    const open = el('button', { type: 'button', class: 'small', text: 'Abrir partida' });
+    open.addEventListener('click', () => openMatch(point.m));
+    box.replaceChildren(
+        el('b', { text: point.find ? treasureName(point.find) : kindName(point.kind) }),
+        el('span', { text: ` · ${modeName(point.m.playlist)} · ${dateShort.format(point.date)} · aos ${clock(point.t)} · ${whereText}` }),
+        open);
+}
+
+function drawMap(s) {
+    mainMap ??= createMap($('map'), { onPick: showPick });
+    const { points, treasurePoints, landings, routes } = s.storm;
+    const { mode, color, treasures } = mapState;
+    $('mapMode').value = mode;
+    $('mapColor').value = color;
+    $('mapTreasures').checked = treasures;
+    $('mapColorBox').hidden = mode !== 'points' || treasures;
+    $('mapTreasureBox').hidden = mode !== 'points';
+
+    let scene = { markers: [] }, text = '', legend = [];
+    if (mode === 'points') {
+        const diamonds = treasurePoints.map(treasureMarker);
+        scene.markers = treasures ? diamonds : [...points.map(p => chestMarker(p, color)), ...diamonds];
+        text = treasures
+            ? `${plural(treasurePoints.length, 'tesouro', 'tesouros')} com posição conhecida.`
+            : `${plural(points.length, 'baú', 'baús')} de ${plural(s.storm.matches, 'partida', 'partidas')}` + (treasurePoints.length ? ` e ${plural(treasurePoints.length, 'tesouro', 'tesouros')} (losangos amarelos).` : '.');
+        if (!treasures) {
+            if (color === 'kind') legend = MAP_KINDS.flatMap(([, name, c]) => legendItem(c, name));
+            else if (color === 'phase') legend = [...legendItem(ramp(0), 'Fase 0'), ...legendItem(ramp(0.5), 'Fase 3–4'), ...legendItem(ramp(1), 'Fase 7')];
+            else if (color === 'time') legend = [...legendItem(ramp(0), 'Início'), ...legendItem(ramp(0.5), '10 min'), ...legendItem(ramp(1), '20 min ou mais')];
+            else legend = [...legendItem(MAP_SAFE, 'Zona segura (cheio)'), ...legendItem(MAP_STORM, 'Tempestade (vazado)', 'hollow')];
+            if (color !== 'storm') legend.push(...legendItem('transparent', 'Quadrado vazado: na tempestade', 'hollow outline'));
+        }
+        if (treasurePoints.length) legend.push(...legendItem(MAP_TREASURE, 'Tesouro', 'diamond'));
+    } else if (mode === 'heat') {
+        scene.heat = { points: points.map(p => [p.x, p.y]), color: [39, 194, 255] };
+    } else if (mode === 'route') {
+        const spots = [];
+        for (const route of routes) for (let i = 0; i + 2 < route.length; i += 3) spots.push([route[i + 1] * 100, route[i + 2] * 100]);
+        scene.heat = { points: spots, color: [252, 244, 0] };
+    } else {
+        scene.markers = landings.map(p => chestMarker(p, 'kind'));
+        text = landings.length ? `O primeiro baú de ${plural(landings.length, 'partida', 'partidas')}: é onde você costuma pousar.` : '';
+        legend = MAP_KINDS.flatMap(([, name, c]) => legendItem(c, name));
+    }
+
+    const heat = mainMap.update(scene);
+    if (mode === 'heat' && heat) {
+        text = `${plural(points.length, 'baú', 'baús')} em ${plural(heat.cells, 'quadrado', 'quadrados')} de ${fmt.format(Math.round(heat.cell / 100))} m de lado. O mais cheio tem ${plural(heat.max, 'baú', 'baús')} (${pct(heat.max, points.length)} do total).`;
+        legend = [...legendItem('rgba(39,194,255,.3)', 'Poucos baús'), ...legendItem('rgba(39,194,255,1)', 'Muitos baús')];
+    } else if (mode === 'route' && heat) {
+        const seconds = scene.heat.points.length * 4;
+        text = `Por onde você andou em ${plural(routes.length, 'partida', 'partidas')} (${fmt.format(Math.round(seconds / 60))} min de jogo). No quadrado mais visitado, de ${fmt.format(Math.round(heat.cell / 100))} m de lado, você passou ${fmt1.format(heat.max * 4 / 60)} min.`;
+        legend = [...legendItem('rgba(252,244,0,.3)', 'Passou pouco'), ...legendItem('rgba(252,244,0,1)', 'Ficou muito tempo')];
+    }
+    if (!scene.markers.length && !scene.heat?.points.length) {
+        text = mode === 'route'
+            ? 'Sem rota guardada para as partidas mostradas. Adicione os replays de novo para o mapa ter a rota.'
+            : 'Sem posições para as partidas mostradas. Adicione os replays de novo, se ainda os tiver.';
+        legend = [];
+    }
+    $('mapText').textContent = text;
+    $('mapLegend').replaceChildren(...legend);
+}
+
+for (const [id, key] of [['mapMode', 'mode'], ['mapColor', 'color']]) {
+    $(id).addEventListener('change', event => { mapState[key] = event.target.value; showPick(null); render(); });
+}
+$('mapTreasures').addEventListener('change', event => { mapState.treasures = event.target.checked; showPick(null); render(); });
+
+/** The map of one match: the route as a dashed line and the chests numbered in the order they were opened. */
+function matchMap(m) {
+    const host = el('div', { class: 'mapHost small' });
+    const map = createMap(host);
+    const route = m.storm?.route ?? [];
+    const line = [];
+    for (let i = 0; i + 2 < route.length; i += 3) {
+        if (i > 0 && route[i] - route[i - 3] > 30) line.push(null); // a hole in the positions (vehicle…): no straight line across it
+        line.push([route[i + 1] * 100, route[i + 2] * 100]);
+    }
+    const ordered = [...m.chests].sort((a, b) => (a.timeSeconds ?? 0) - (b.timeSeconds ?? 0));
+    const markers = [];
+    ordered.forEach((chest, i) => {
+        if (Number.isFinite(chest.storm?.x)) markers.push({ x: chest.storm.x, y: chest.storm.y, color: chest.storm.inStorm ? MAP_STORM : MAP_SAFE, shape: chest.storm.inStorm ? 'hollow' : 'square', label: String(i + 1) });
+    });
+    for (const find of m.treasureFinds) if (Number.isFinite(find.storm?.x)) markers.push({ x: find.storm.x, y: find.storm.y, color: MAP_TREASURE, shape: 'diamond' });
+    if (markers.length === 0 && line.length === 0) return null;
+    map.update({ markers, line });
+    return el('div', {}, host, el('div', { class: 'splitText' },
+        ...legendItem(MAP_SAFE, 'Zona segura'), ...legendItem(MAP_STORM, 'Tempestade', 'hollow'),
+        ...(m.treasureFinds.some(f => f.storm) ? legendItem(MAP_TREASURE, 'Tesouro', 'diamond') : []),
+        ...(line.length ? [el('span', { class: 'key dash' }), el('span', { text: 'Sua rota' })] : [])));
 }
 
 const WEEKDAYS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
@@ -459,9 +564,9 @@ function openMatch(m) {
 
     const where = spot => (spot?.inStorm == null ? '—' : (spot.inStorm ? 'Tempestade' : 'Zona segura') + (spot.phase ? ` · fase ${spot.phase}` : ''));
     const chests = el('table');
-    table(chests, [{ t: 'Momento', n: true }, { t: 'Tipo' }, { t: 'Onde' }, { t: 'Itens', n: true }],
-        [...m.chests].sort((a, b) => (a.timeSeconds ?? 0) - (b.timeSeconds ?? 0)).map(c => [
-            clock(c.timeSeconds), kindName(c.kind) + (c.destroyed ? ' (destruído)' : ''),
+    table(chests, [{ t: 'Nº', n: true }, { t: 'Momento', n: true }, { t: 'Tipo' }, { t: 'Onde' }, { t: 'Itens', n: true }],
+        [...m.chests].sort((a, b) => (a.timeSeconds ?? 0) - (b.timeSeconds ?? 0)).map((c, i) => [
+            String(i + 1), clock(c.timeSeconds), kindName(c.kind) + (c.destroyed ? ' (destruído)' : ''),
             { t: where(c.storm), c: c.storm?.inStorm ? 'inStorm' : '' }, c.items.length ? fmt.format(c.items.length) : '']),
         'Nenhum baú aberto nesta partida.');
 
@@ -474,6 +579,8 @@ function openMatch(m) {
     } else {
         body.push(el('p', { class: 'muted', text: 'Sem dados de tempestade para esta partida. Adicione o replay de novo, se ainda o tiver.' }));
     }
+    const map = matchMap(m);
+    if (map) body.push(el('h3', { text: 'Mapa da partida' }), el('p', { class: 'muted', text: 'Os números são a ordem em que os baús foram abertos, a mesma da tabela abaixo.' }), map);
     body.push(el('h3', { text: 'Baús, na ordem' }), el('div', { class: 'scroll' }, chests));
 
     const others = Object.entries(m.otherInteractions).filter(([, n]) => n > 0);
@@ -543,7 +650,7 @@ function record(file, fileKey, result) {
     // Web-only storm analysis: one point per chest and per treasure, in the same order.
     match.stormVersion = result.stormVersion ?? 0;
     if (result.storm) {
-        match.storm = { phases: result.storm.phases ?? [], note: result.storm.note ?? null };
+        match.storm = { phases: result.storm.phases ?? [], route: result.storm.route ?? [], note: result.storm.note ?? null };
         (result.storm.chests ?? []).forEach((spot, i) => { if (spot && match.chests[i]) match.chests[i].storm = spot; });
         (result.storm.treasures ?? []).forEach((spot, i) => { if (spot && match.treasureFinds[i]) match.treasureFinds[i].storm = spot; });
     }

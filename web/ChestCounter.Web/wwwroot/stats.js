@@ -131,12 +131,14 @@ export function build(data, filter = {}, now = new Date()) {
     }
 
     // Storm: where the player stood when each chest / treasure was taken (only real chests carry a position).
-    const storm = { chests: { in: 0, out: 0, unknown: 0 }, treasures: { in: 0, out: 0, unknown: 0 }, phases: new Map(), points: [], matches: 0 };
+    const storm = { chests: { in: 0, out: 0, unknown: 0 }, treasures: { in: 0, out: 0, unknown: 0 }, phases: new Map(), points: [], treasurePoints: [], landings: [], routes: [], matches: 0 };
     const minutes = [];
     const heat = Array.from({ length: 7 }, () => new Array(24).fill(0));
     for (const row of rows) {
         row.storm = stormOf(row.m);
         if (row.storm) storm.matches++;
+        if (row.m.storm?.route?.length) storm.routes.push(row.m.storm.route);
+        let landing = null;
         for (const chest of row.m.chests ?? []) {
             const minute = Math.max(0, Math.floor((chest.timeSeconds ?? 0) / 60));
             minutes[minute] = (minutes[minute] ?? 0) + 1;
@@ -146,10 +148,14 @@ export function build(data, filter = {}, now = new Date()) {
             const phase = storm.phases.get(spot.phase ?? 0) ?? { in: 0, out: 0 };
             phase[spot.inStorm ? 'in' : 'out']++;
             storm.phases.set(spot.phase ?? 0, phase);
-            storm.points.push({ x: spot.x, y: spot.y, inStorm: spot.inStorm });
+            const point = { x: spot.x, y: spot.y, inStorm: spot.inStorm, phase: spot.phase ?? 0, edge: spot.edgeMeters ?? null, kind: chest.kind, t: chest.timeSeconds ?? 0, m: row.m, date: row.date };
+            storm.points.push(point);
+            if (!landing || point.t < landing.t) landing = point;
         }
+        if (landing) storm.landings.push(landing);
         for (const find of row.m.treasureFinds ?? []) {
             const spot = find.storm;
+            if (spot && Number.isFinite(spot.x)) storm.treasurePoints.push({ x: spot.x, y: spot.y, inStorm: spot.inStorm ?? null, phase: spot.phase ?? 0, edge: spot.edgeMeters ?? null, find, t: find.obtainedAtSeconds ?? 0, m: row.m, date: row.date });
             if (!spot || spot.inStorm == null) storm.treasures.unknown++;
             else storm.treasures[spot.inStorm ? 'in' : 'out']++;
         }

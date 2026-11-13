@@ -82,6 +82,7 @@
     <div class="tabs" role="tablist" aria-label="Seções do relatório">
       <button type="button" role="tab" id="tab-resumo" data-tab-button="resumo">Resumo</button>
       <button type="button" role="tab" id="tab-tempestade" data-tab-button="tempestade">Tempestade</button>
+      <button type="button" role="tab" id="tab-mapa" data-tab-button="mapa">Mapa</button>
       <button type="button" role="tab" id="tab-graficos" data-tab-button="graficos">Gráficos</button>
       <button type="button" role="tab" id="tab-listas" data-tab-button="listas">Listas</button>
     </div>
@@ -139,11 +140,35 @@
         <div id="stormPhases"></div>
         <p class="muted">Fase 0 é antes de o primeiro círculo começar a fechar; a fase 1 começa quando ele fecha pela primeira vez.</p>
       </section>
+    </div>
+
+    <div data-tab="mapa">
       <section class="card">
-        <h2>Mapa dos baús</h2>
+        <h2>Mapa</h2>
+        <div class="mapControls">
+          <label>Mostrar
+            <select id="mapMode">
+              <option value="points">Baús (pontos)</option>
+              <option value="heat">Calor dos baús</option>
+              <option value="route">Calor da rota</option>
+              <option value="landing">Onde você pousa</option>
+            </select>
+          </label>
+          <label id="mapColorBox">Cor por
+            <select id="mapColor">
+              <option value="storm">Tempestade</option>
+              <option value="kind">Tipo de baú</option>
+              <option value="phase">Fase da tempestade</option>
+              <option value="time">Momento da partida</option>
+            </select>
+          </label>
+          <label id="mapTreasureBox"><input type="checkbox" id="mapTreasures"> Só tesouros</label>
+        </div>
         <p id="mapText"></p>
-        <div id="stormMap"></div>
-        <p class="muted">Cada ponto é onde você estava ao abrir um baú. O desenho não tem o mapa do jogo por baixo, e a orientação (norte para cima) é aproximada.</p>
+        <div class="mapHost" id="map"></div>
+        <div class="splitText" id="mapLegend"></div>
+        <div class="pick" id="mapPick" hidden></div>
+        <p class="muted">Arraste para mover; use a roda do mouse, dois dedos ou os botões para aproximar; toque num ponto para ver o baú. Cada ponto é onde você estava ao abrir o baú. O desenho não tem o mapa do jogo por baixo, e a orientação (norte para cima) é aproximada.</p>
       </section>
     </div>
 

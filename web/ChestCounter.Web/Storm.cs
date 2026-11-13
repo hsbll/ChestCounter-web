@@ -41,6 +41,11 @@ public sealed class StormInfo
     public List<StormPoint?> Chests { get; set; } = new();
     /// <summary>One entry per treasure of the match, in the same order.</summary>
     public List<StormPoint?> Treasures { get; set; } = new();
+    /// <summary>
+    /// The player's route, thinned to one position every few seconds: flat triples (match clock in seconds,
+    /// x in metres, y in metres). Metres, not Unreal centimetres, to keep the saved history small.
+    /// </summary>
+    public List<int> Route { get; set; } = new();
     /// <summary>Why there is no data, when there is none.</summary>
     public string? Note { get; set; }
 }
@@ -48,7 +53,10 @@ public sealed class StormInfo
 public static class StormAnalyzer
 {
     /// <summary>Bumped when the way of computing this changes: the page reads replays again.</summary>
-    public const int Version = 1;
+    public const int Version = 2;
+
+    /// <summary>Seconds between two kept positions of the route.</summary>
+    private const double RouteStep = 4;
 
     /// <summary>A position further than this (seconds) from the chest moment is not trusted.</summary>
     private const double MaxPositionGap = 8;
@@ -70,6 +78,16 @@ public static class StormAnalyzer
         if (track.Count == 0)
         {
             info.Note = "no positions for the player in this replay";
+        }
+
+        var last = double.NegativeInfinity;
+        foreach (var spot in track)
+        {
+            if (spot.Time - last < RouteStep) continue;
+            last = spot.Time;
+            info.Route.Add((int)Math.Round(spot.Time));
+            info.Route.Add((int)Math.Round(spot.X / 100));
+            info.Route.Add((int)Math.Round(spot.Y / 100));
         }
 
         foreach (var chest in match.Chests)

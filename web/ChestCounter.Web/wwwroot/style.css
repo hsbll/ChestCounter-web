@@ -252,3 +252,23 @@ td.inStorm { color: var(--epic); }
 .heatCell { height: 22px; background: var(--card2); border: 1px solid var(--line); }
 .heatCell:hover, .heatCell:focus-visible { outline: 2px solid var(--krill); outline-offset: 0; }
 #rhythm { height: 170px; }
+
+/* Map */
+.mapControls { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; margin-bottom: 10px; }
+.mapControls label { color: var(--ink2); font-size: 19px; display: flex; gap: 8px; align-items: center; }
+.mapHost { position: relative; width: 100%; max-width: 640px; aspect-ratio: 1; border: 3px solid var(--line); background: var(--card2); }
+.mapHost.small { max-width: 460px; }
+.mapCanvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.mapCanvas:active { cursor: grabbing; }
+.mapCanvas:focus-visible { outline: 3px solid var(--krill); outline-offset: 3px; }
+.mapZoom { position: absolute; top: 8px; right: 8px; display: flex; flex-direction: column; gap: 6px; }
+.mapZoom button { transform: none; margin: 0; padding: 6px 8px; font-size: 12px; min-width: 34px; box-shadow: 0 0 0 3px var(--line2); }
+.mapZoom button:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 0 0 3px var(--line2); }
+.key.hollow { box-shadow: inset 0 0 0 3px currentColor; }
+.key.hollow:not(.outline) { box-shadow: inset 0 0 0 4px var(--card2), inset 0 0 0 12px transparent; outline: 3px solid var(--epic); outline-offset: -3px; background: var(--card2) !important; }
+.key.outline { color: var(--ink2); }
+.key.diamond { transform: rotate(45deg) scale(.8); }
+.key.dash { background: repeating-linear-gradient(90deg, var(--ink) 0 4px, transparent 4px 8px); height: 2px; width: 18px; }
+.splitText .key { margin-left: 12px; } .splitText .key:first-child { margin-left: 0; }
+.pick { margin-top: 12px; padding: 8px 12px; border: 3px solid var(--krill-dim); background: var(--card2); }
+.pick b { text-decoration: none; color: var(--krill); }
