@@ -1,4 +1,4 @@
-﻿/*
+/*
 === Kraken Decompressor for Windows ===
 Converted to C# for Fortnite by SL-x-TnT, original source code available at https://github.com/powzix/ooz.
 
@@ -31,11 +31,18 @@ public unsafe class Kraken
     /// <param name="compressedInput"></param>
     /// <param name="uncompressedSize"></param>
     /// <returns>Decompressed byte[]</returns>
+    /// <summary>
+    /// The decoder copies 8 and 16 bytes at a time and can write a few bytes past the end of the output, as the
+    /// original Ooz does (it asks callers for 64 spare bytes). Without them it overwrites whatever object follows
+    /// the buffer in memory: harmless most of the time on desktop .NET, a garbage-collector crash in the browser.
+    /// </summary>
+    private const int SafeSpace = 64;
+
     public ReadOnlyMemory<byte> Decompress(ReadOnlySpan<byte> compressedInput, int uncompressedSize)
     {
         using var decoder = new KrakenDecoder();
 
-        var decompressedBuffer = new byte[uncompressedSize];
+        var decompressedBuffer = new byte[uncompressedSize + SafeSpace];
         var remainingBytes = uncompressedSize;
         var sourceLength = compressedInput.Length;
         var destinationOffset = 0;
@@ -62,7 +69,7 @@ public unsafe class Kraken
             }
         }
 
-        return decompressedBuffer;
+        return new ReadOnlyMemory<byte>(decompressedBuffer, 0, uncompressedSize);
     }
 
     private bool DecodeStep(KrakenDecoder decoder, byte* destination, int destinationOffset, int remainingDestinationBytes, byte* source, int sourceBytesleft, byte* scratch)
@@ -89,7 +96,8 @@ public unsafe class Kraken
             }
 
             //throw new NotImplementedException($"memmove(dst_start + offset, src, dst_bytes_left);");
-            Buffer.MemoryCopy(source, destination + destinationOffset, sourceBytesleft, sourceBytesleft);
+            // memmove(dst_start + offset, src, dst_bytes_left): only this block, not the rest of the input.
+            Buffer.MemoryCopy(source, destination + destinationOffset, destinationBytesLeft, destinationBytesLeft);
 
             decoder.SourceUsed = (int)((source - sourceIn) + destinationBytesLeft);
             decoder.DestinationUsed = destinationBytesLeft;
@@ -142,8 +150,8 @@ public unsafe class Kraken
             }
             else
             {
-                var val = quantumHeader.Checksum;
-                Buffer.MemoryCopy(&val, destination + destinationOffset, destinationBytesLeft, destinationBytesLeft);
+                // memset(dst_start + offset, qhdr.checksum, dst_bytes_left): the block is one repeated byte.
+                new Span<byte>(destination + destinationOffset, destinationBytesLeft).Fill((byte)quantumHeader.Checksum);
             }
 
             decoder.SourceUsed = (int)(source - sourceIn);

@@ -19,6 +19,17 @@ public sealed class TreasureFind
     /// <summary>Name to display (re-resolved from treasures.json so renaming updates old matches).</summary>
     public string DisplayName => PrizeId != null ? TreasureNames.Friendly(PrizeId) : L.Name(Item);
 
+    public string Scope { get; set; } = "own";
+    public string? Finder { get; set; }
+    private bool _isPirateToken;
+    public bool IsPirateToken
+    {
+        get => _isPirateToken || ((FromGoldenChest || Evidence == "recipient-handler")
+            && (TreasureNames.IsPirateToken(RawItem)
+                || (PrizeId != null && TreasureNames.IsPirateToken(TreasureNames.Friendly(PrizeId)))));
+        set => _isPirateToken = value;
+    }
+    public string Evidence { get; set; } = "";
     public string Item { get; set; } = "";
     public string RawItem { get; set; } = "";
     /// <summary>Prize id sent by the server with the golden chest, e.g. "DelilahPrize:dpid_item4".</summary>
@@ -85,6 +96,13 @@ public sealed class MatchRecord
     public bool IsBattleRoyale { get; set; } = true;
     public List<ChestRecord> Chests { get; set; } = new();
     public List<TreasureFind> TreasureFinds { get; set; } = new();
+    public List<TreasureFind> NearbyTreasureFinds { get; set; } = new();
+    [JsonIgnore]
+    public IEnumerable<TreasureFind> AllTreasureFinds => TreasureFinds.Concat(NearbyTreasureFinds);
+    [JsonIgnore]
+    public bool PirateTokenSeen => AllTreasureFinds.Any(f => f.IsPirateToken);
+    [JsonIgnore]
+    public List<ReplayDistanceObservation> DistanceObservations { get; set; } = new();
     /// <summary>Teammates of the match (empty in solo). Null for matches analyzed before analyzer version 13.</summary>
     public List<TeammateRecord>? Teammates { get; set; }
 
@@ -113,17 +131,20 @@ public sealed class MatchRecord
     /// asked, the chests the teammates were seen opening. The saved history is never changed. Returns the same match
     /// when nothing is added.
     /// </summary>
-    public MatchRecord WithExtras(IReadOnlyCollection<string> kinds, bool addTeammates = false)
+    public MatchRecord WithExtras(IReadOnlyCollection<string> kinds, bool addTeammates = false, bool addTeammateTreasures = false)
     {
         var extra = kinds.Sum(Interactions);
         var mates = addTeammates ? TeammatesSeen(kinds) : 0;
-        if (extra == 0 && mates == 0)
+        var treasures = addTeammateTreasures ? NearbyTreasureFinds.Where(f => f.Scope == "team").ToList() : new List<TreasureFind>();
+        if (extra == 0 && mates == 0 && treasures.Count == 0)
         {
             return this;
         }
         var copy = (MatchRecord)MemberwiseClone();
         copy.ChestsOpened = ChestsOpened + extra + mates;
         copy.TeammatesAdded = mates;
+        copy.TreasureFinds = TreasureFinds.Concat(treasures).ToList();
+        copy.NearbyTreasureFinds = NearbyTreasureFinds.Except(treasures).ToList();
         return copy;
     }
 }
@@ -201,6 +222,7 @@ public sealed class Config
     /// kinds, only the figures shown change: the saved history keeps the player's own chests.
     /// </summary>
     public bool CountTeammateChests { get; set; }
+    public bool CountTeammateTreasures { get; set; }
 
     /// <summary>Non-chest kinds the player chose to add to the chest total.</summary>
     public IReadOnlyCollection<string> ExtraKinds()
@@ -445,3 +467,5 @@ public sealed class Store
         File.Move(tmp, path, overwrite: true);
     }
 }
+
+public sealed record ReplayDistanceObservation(float Time, string Finder, string Kind, double? DistanceMeters, float? RecorderPositionAge, float? FinderPositionAge, bool BothAlive, bool ObservedTransition);

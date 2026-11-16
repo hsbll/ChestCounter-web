@@ -272,3 +272,53 @@ td.inStorm { color: var(--epic); }
 .splitText .key { margin-left: 12px; } .splitText .key:first-child { margin-left: 0; }
 .pick { margin-top: 12px; padding: 8px 12px; border: 3px solid var(--krill-dim); background: var(--card2); }
 .pick b { text-decoration: none; color: var(--krill); }
+
+/* Map legend */
+.legend { margin-top: 10px; padding: 8px 12px; border: 3px solid var(--line); background: var(--card2); max-width: 640px; gap: 6px 8px; }
+.legend:empty { display: none; }
+.legendTitle { font: 700 11px var(--label); text-transform: uppercase; letter-spacing: .05em; color: var(--accent); margin-right: 8px; }
+.gradient { display: inline-block; width: 140px; height: 14px; border: 2px solid var(--line2); }
+.key.line { width: 26px; height: 4px; background: rgb(255, 190, 60); }
+.key.line.faint { opacity: .35; }
+.key.line.strong { box-shadow: 0 0 6px rgba(255, 220, 120, .9); background: rgb(255, 235, 170); }
+
+/* Time window chosen by hand */
+.range { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.range label { color: var(--ink2); font-size: 19px; display: flex; gap: 8px; align-items: center; }
+input[type=datetime-local] { font: 20px var(--text); color: var(--ink); background: var(--card2); border: 3px solid var(--line2); border-radius: 0; padding: 2px 6px; color-scheme: dark; }
+.rangeNote { margin: 12px 0 0; max-width: 80ch; }
+.rangeNote.error { color: var(--bad); }
+
+/* Import: stop, complete old matches */
+.stopRow { justify-content: flex-start; margin-top: 10px; }
+.stopRow:has(> [hidden]:only-child) { display: none; }
+#upgradeBox { margin-top: 14px; }
+#upgradeText { margin: 8px 0 0; }
+
+/* Treasure Hours */
+.countdown { font: 700 26px/1.2 var(--label); color: var(--krill); text-shadow: 3px 3px 0 #000, 0 0 10px rgba(252, 244, 0, .35); font-variant-numeric: tabular-nums; margin: 4px 0 8px; }
+.countdown.small { font-size: 18px; color: var(--accent); text-shadow: var(--glow); }
+.countdown:empty { display: none; }
+.splitTrack .gold { background: var(--krill); box-shadow: inset 0 -6px 0 var(--krill-dim); }
+.key.gold { background: var(--krill); }
+.splitTrack .empty { background: var(--card2); border: 2px dashed var(--line); }
+.inlineCheck { display: block; margin: 6px 0 12px; cursor: pointer; }
+.goalControls { display: flex; flex-wrap: wrap; gap: 10px 22px; margin-bottom: 10px; }
+.goalControls label { color: var(--ink2); font-size: 19px; display: flex; gap: 8px; align-items: center; }
+.valueBars { display: grid; gap: 8px; margin-top: 8px; }
+.valueRow { display: grid; grid-template-columns: minmax(120px, 210px) 1fr auto; gap: 10px; align-items: center; }
+.valueLabel { font: 700 11px var(--label); text-transform: uppercase; color: var(--ink2); }
+.valueTrack { height: 20px; background: var(--card2); border: 2px solid var(--line); }
+.valueFill { display: block; height: 100%; }
+.valueFill.safe { background: var(--accent); } .valueFill.gold { background: var(--krill); }
+.valueText { font-variant-numeric: tabular-nums; white-space: nowrap; }
+#events input[type=number] { width: 70px; }
+#events input[type=datetime-local] { font-size: 17px; }
+#chances input[type=checkbox] { margin: 0; }
+@media (max-width: 640px) { .valueRow { grid-template-columns: 1fr auto; } .valueTrack { grid-column: 1 / -1; grid-row: 2; } }
+.weekRow { display: grid; grid-template-columns: minmax(120px, 170px) 1fr; gap: 4px 10px; align-items: center; }
+.weekRow .valueText { grid-column: 2; font-size: 17px; color: var(--ink2); white-space: normal; }
+.weekRow.current .valueLabel { color: var(--krill); }
+.weekTrack { display: flex; gap: 2px; height: 18px; background: var(--card2); border: 2px solid var(--line); }
+.weekTrack .safe { background: var(--accent); } .weekTrack .gold { background: var(--krill); }
+@media (max-width: 640px) { .weekRow { grid-template-columns: 1fr; } .weekRow .valueText { grid-column: 1; } }

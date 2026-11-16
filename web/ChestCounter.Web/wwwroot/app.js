@@ -1,9 +1,10 @@
-import { createEngine } from './engine.js';
+import { createEngine, isFatal } from './engine.js';
 import * as store from './store.js';
 import * as stats from './stats.js';
 import { listReplays } from './zip.js';
 import { drawSummary, loadFonts } from './summary-image.js';
-import { createMap } from './map.js';
+import { createMap, HEAT_CSS } from './map.js';
+import * as treasure from './treasure.js';
 
 const $ = id => document.getElementById(id);
 const fmt = new Intl.NumberFormat('pt-BR');
@@ -39,6 +40,8 @@ const APP_VERSION = document.querySelector('meta[name="app-version"]')?.content 
 let data = store.emptyData();
 let engine = null;
 let busy = false;
+let stopRequested = false;
+const readTimes = []; // seconds per replay, for the diagnostic
 let persistent = true;   // false: the browser keeps nothing (private window…)
 let protectedStorage = null;
 const shownRows = {};
@@ -47,7 +50,8 @@ resetLists();
 let chartDays = 7;
 let tab = 'resumo';
 let openKey = null;      // match shown in the dialog
-const filter = { period: 'all', size: '' };
+const filter = { period: 'all', size: '', range: null };
+let rangeError = null; // message for hours that cannot be right
 const problems = [];     // latest errors, for "Copiar diagnóstico"
 const startup = { began: Date.now(), ms: null, fallback: false };
 
@@ -166,7 +170,20 @@ function draw() {
         ...Object.keys(SIZE_NAMES).filter(size => s.sizes.includes(size)).map(size => el('option', { value: size, text: SIZE_NAMES[size] })));
     $('size').value = filter.size;
     $('period').value = filter.period;
+    $('rangeBox').hidden = filter.period !== 'custom';
     $('filterNote').textContent = s.filtered ? `${plural(s.matches, 'partida', 'partidas')} de ${fmt.format(s.available)}` : '';
+    $('rangeNote').classList.toggle('error', filter.period === 'custom' && !!rangeError);
+    if (filter.period === 'custom' && rangeError) {
+        $('rangeNote').hidden = false;
+        $('rangeNote').textContent = `${rangeError}` + (filter.range ? ` Continua valendo o horário anterior (${rangeText(filter.range)}).` : '');
+    } else if (filter.period === 'custom' && filter.range) {
+        $('rangeNote').hidden = false;
+        $('rangeNote').textContent = s.clipped
+            ? `${plural(s.clipped, 'partida começa ou termina', 'partidas começam ou terminam')} fora do horário escolhido: nelas contam só os baús e tesouros abertos dentro dele (pelo horário de cada um, com precisão de cerca de meio minuto). Caixas de munição e comida e os baús dos companheiros dessas partidas ficam de fora, porque o replay só os traz como total da partida.`
+            : 'Todas as partidas mostradas estão inteiras dentro do horário escolhido.';
+    } else if (filter.period !== 'custom') {
+        $('rangeNote').hidden = true;
+    }
 
     $('total').textContent = fmt.format(s.total);
     const notes = [];
@@ -187,6 +204,7 @@ function draw() {
         tile('Hoje', fmt.format(s.today)),
         tile('Melhor dia', s.bestDay ? fmt.format(s.bestDay.chests) : '—', s.bestDay ? s.bestDay.key.split('-').reverse().join('/') : null),
         tile('Tesouros', fmt.format(s.treasures.length)),
+        tile('Token pirata', s.tokens.length ? fmt.format(s.tokens.length) : 'Não', s.tokens.length ? `último ${dateDay.format(s.tokens[0].date)}` : 'nenhum visto ainda'),
         tile('Vitórias', fmt.format(s.wins), share(s.wins)),
         tile('Top 10', fmt.format(s.top10), share(s.top10)),
         ...(settings.showTeammates ? [tile('Baús dos companheiros', '≥ ' + fmt.format(s.teamChests))] : []),
@@ -195,6 +213,7 @@ function draw() {
     drawChart(chartDays === 30 ? s.days30 : s.lastDays);
     drawTabs();
     drawStorm(s);
+    drawTreasure(s);
     drawMap(s);
     drawExtras(s);
 
@@ -226,7 +245,7 @@ function draw() {
 
     table($('treasures'), [{ t: 'Tesouro' }, { t: 'Partida' }, { t: 'Momento', n: true }, { t: 'Origem' }],
         s.treasures.slice(0, pager('treasures', s.treasures.length)).map(({ find, date }) => [
-            { t: (find.fromGoldenChest ? '★★ ' : '★ ') + treasureName(find), c: 'wrap' },
+            { t: (find.fromGoldenChest ? '★★ ' : '★ ') + treasureName(find) + (find.isPirateToken ? ' · TOKEN PIRATA' : '') + (find.scope === 'team' ? ` (achado por ${find.finder || 'companheiro'})` : ''), c: find.isPirateToken ? 'wrap win' : 'wrap' },
             dateShort.format(date), clock(find.obtainedAtSeconds),
             kindName(find.sourceKind) + (find.sourceDestroyed ? ' (destruído)' : '') + (find.sourceIsChest === false ? ' ⚑' : ''),
         ]), 'Nenhum tesouro encontrado nas partidas mostradas.');
@@ -255,11 +274,47 @@ function draw() {
     }), 'Nenhuma partida neste filtro.', index => openMatch(visible[index].m));
 }
 
+const dateTime = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+const timeOnly = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+/** "13/11 20:00 – 14/11 02:00" (the second day left out when it is the same). */
+function rangeText(range) {
+    const from = new Date(range.from), to = new Date(range.to);
+    const sameDay = stats.dayKey(from) === stats.dayKey(to);
+    return `${dateTime.format(from)} – ${sameDay ? timeOnly.format(to) : dateTime.format(to)}`;
+}
+
 function filterText() {
-    return [PERIOD_NAMES[filter.period], SIZE_NAMES[filter.size]].filter(Boolean).join(' · ');
+    const period = filter.period === 'custom' && filter.range ? rangeText(filter.range) : PERIOD_NAMES[filter.period];
+    return [period, SIZE_NAMES[filter.size]].filter(Boolean).join(' · ');
+}
+
+/** 'YYYY-MM-DDTHH:MM' in local time, as a datetime-local input wants it. */
+const localInput = date => `${stats.dayKey(date)}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+
+/** Reads the two fields; a window that ends before it starts is refused with a message. */
+function readRange() {
+    const from = new Date($('rangeFrom').value).getTime(), to = new Date($('rangeTo').value).getTime();
+    if (!Number.isFinite(from) || !Number.isFinite(to)) return { error: 'Preencha a data e a hora de início e de fim.' };
+    if (to <= from) return { error: 'O fim precisa ser depois do início.' };
+    return { from, to };
+}
+
+function applyRange() {
+    const range = readRange();
+    // A window that cannot be right keeps the last good one on screen, with the message.
+    if (!range.error) filter.range = range;
+    rangeError = range.error ?? null;
+    if (!range.error) {
+        data.settings.range = { from: $('rangeFrom').value, to: $('rangeTo').value };
+        store.save(data);
+    }
+    resetLists();
+    render();
 }
 
 function drawNotices() {
+    drawUpgrade();
     $('storageNotice').hidden = persistent;
     const count = Object.keys(data.matches).length;
     const unsaved = count - (data.backup.at ? data.backup.matches : 0);
@@ -360,6 +415,19 @@ const chestMarker = (point, by) => ({ x: point.x, y: point.y, color: pointColor(
 const treasureMarker = point => ({ x: point.x, y: point.y, color: MAP_TREASURE, shape: 'diamond', data: point });
 const legendItem = (color, text, shape = '') => [el('span', { class: `key ${shape}`, style: `background:${color}` }), el('span', { text })];
 
+/** A saved route (flat triples: seconds, x and y in metres) as map points; a hole in time breaks the line. */
+function routeLine(route) {
+    const line = [];
+    for (let i = 0; i + 2 < route.length; i += 3) {
+        if (i > 0 && route[i] - route[i - 3] > 30) line.push(null); // no position for a while (vehicle…): no straight line across it
+        line.push([route[i + 1] * 100, route[i + 2] * 100]);
+    }
+    return line;
+}
+
+/** Legend of a gradient: the bar, with what its two ends mean. */
+const gradientLegend = (css, low, high) => [el('span', { text: low }), el('span', { class: 'gradient', style: `background:${css}` }), el('span', { text: high })];
+
 function showPick(point) {
     const box = $('mapPick');
     box.hidden = !point;
@@ -400,11 +468,9 @@ function drawMap(s) {
         }
         if (treasurePoints.length) legend.push(...legendItem(MAP_TREASURE, 'Tesouro', 'diamond'));
     } else if (mode === 'heat') {
-        scene.heat = { points: points.map(p => [p.x, p.y]), color: [39, 194, 255] };
+        scene.heat = { points: points.map(p => [p.x, p.y]) };
     } else if (mode === 'route') {
-        const spots = [];
-        for (const route of routes) for (let i = 0; i + 2 < route.length; i += 3) spots.push([route[i + 1] * 100, route[i + 2] * 100]);
-        scene.heat = { points: spots, color: [252, 244, 0] };
+        scene.lines = routes.map(routeLine);
     } else {
         scene.markers = landings.map(p => chestMarker(p, 'kind'));
         text = landings.length ? `O primeiro baú de ${plural(landings.length, 'partida', 'partidas')}: é onde você costuma pousar.` : '';
@@ -413,21 +479,22 @@ function drawMap(s) {
 
     const heat = mainMap.update(scene);
     if (mode === 'heat' && heat) {
-        text = `${plural(points.length, 'baú', 'baús')} em ${plural(heat.cells, 'quadrado', 'quadrados')} de ${fmt.format(Math.round(heat.cell / 100))} m de lado. O mais cheio tem ${plural(heat.max, 'baú', 'baús')} (${pct(heat.max, points.length)} do total).`;
-        legend = [...legendItem('rgba(39,194,255,.3)', 'Poucos baús'), ...legendItem('rgba(39,194,255,1)', 'Muitos baús')];
-    } else if (mode === 'route' && heat) {
-        const seconds = scene.heat.points.length * 4;
-        text = `Por onde você andou em ${plural(routes.length, 'partida', 'partidas')} (${fmt.format(Math.round(seconds / 60))} min de jogo). No quadrado mais visitado, de ${fmt.format(Math.round(heat.cell / 100))} m de lado, você passou ${fmt1.format(heat.max * 4 / 60)} min.`;
-        legend = [...legendItem('rgba(252,244,0,.3)', 'Passou pouco'), ...legendItem('rgba(252,244,0,1)', 'Ficou muito tempo')];
+        const side = fmt.format(Math.round(heat.cell / 100));
+        text = `${plural(points.length, 'baú', 'baús')}. A área mais quente junta ${plural(heat.max, 'baú', 'baús')} num quadrado de ${side} m de lado (${pct(heat.max, points.length)} do total).`;
+        legend = gradientLegend(HEAT_CSS, '1 baú', `${plural(heat.max, 'baú', 'baús')} ou mais perto`);
+    } else if (mode === 'route' && routes.length) {
+        const minutes = routes.reduce((sum, route) => sum + route.length / 3, 0) * 4 / 60;
+        text = `As rotas de ${plural(routes.length, 'partida', 'partidas')} (${fmt.format(Math.round(minutes))} min de jogo), uma linha por partida. Onde as linhas se juntam e ficam mais claras é caminho que você repete.`;
+        legend = [el('span', { class: 'key line faint' }), el('span', { text: 'Passou uma vez' }), el('span', { class: 'key line strong' }), el('span', { text: 'Caminho repetido' })];
     }
-    if (!scene.markers.length && !scene.heat?.points.length) {
+    if (!scene.markers.length && !scene.heat?.points.length && !scene.lines?.length) {
         text = mode === 'route'
             ? 'Sem rota guardada para as partidas mostradas. Adicione os replays de novo para o mapa ter a rota.'
             : 'Sem posições para as partidas mostradas. Adicione os replays de novo, se ainda os tiver.';
         legend = [];
     }
     $('mapText').textContent = text;
-    $('mapLegend').replaceChildren(...legend);
+    $('mapLegend').replaceChildren(...(legend.length ? [el('span', { class: 'legendTitle', text: 'Legenda' }), ...legend] : []));
 }
 
 for (const [id, key] of [['mapMode', 'mode'], ['mapColor', 'color']]) {
@@ -439,12 +506,7 @@ $('mapTreasures').addEventListener('change', event => { mapState.treasures = eve
 function matchMap(m) {
     const host = el('div', { class: 'mapHost small' });
     const map = createMap(host);
-    const route = m.storm?.route ?? [];
-    const line = [];
-    for (let i = 0; i + 2 < route.length; i += 3) {
-        if (i > 0 && route[i] - route[i - 3] > 30) line.push(null); // a hole in the positions (vehicle…): no straight line across it
-        line.push([route[i + 1] * 100, route[i + 2] * 100]);
-    }
+    const line = routeLine(m.storm?.route ?? []);
     const ordered = [...m.chests].sort((a, b) => (a.timeSeconds ?? 0) - (b.timeSeconds ?? 0));
     const markers = [];
     ordered.forEach((chest, i) => {
@@ -453,11 +515,272 @@ function matchMap(m) {
     for (const find of m.treasureFinds) if (Number.isFinite(find.storm?.x)) markers.push({ x: find.storm.x, y: find.storm.y, color: MAP_TREASURE, shape: 'diamond' });
     if (markers.length === 0 && line.length === 0) return null;
     map.update({ markers, line });
-    return el('div', {}, host, el('div', { class: 'splitText' },
-        ...legendItem(MAP_SAFE, 'Zona segura'), ...legendItem(MAP_STORM, 'Tempestade', 'hollow'),
+    return el('div', {}, host, el('div', { class: 'splitText legend' }, el('span', { class: 'legendTitle', text: 'Legenda' }),
+        ...legendItem(MAP_SAFE, 'Baú na zona segura (nº = ordem)'), ...legendItem(MAP_STORM, 'Baú na tempestade', 'hollow'),
         ...(m.treasureFinds.some(f => f.storm) ? legendItem(MAP_TREASURE, 'Tesouro', 'diamond') : []),
         ...(line.length ? [el('span', { class: 'key dash' }), el('span', { text: 'Sua rota' })] : [])));
 }
+
+// ---- Treasure Hours and chances ----------------------------------------------------------------------------
+const times_ = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 });
+const mult = n => `${times_.format(n)}×`;
+const pctFine = new Intl.NumberFormat('pt-BR', { style: 'percent', maximumSignificantDigits: 2 });
+const weekdayTime = new Intl.DateTimeFormat('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+let editingEvents = false;
+
+/** The Treasure Hours in use: the person's list, or the defaults (which follow updates while never edited). */
+function events() {
+    return data.settings.events ? treasure.readEvents(data.settings.events) : treasure.readEvents(null);
+}
+const chanceText = c => (c <= 0 ? '0%' : c >= 0.9995 ? 'quase 100%' : c < 0.0001 ? `${pctFine.format(c)}` : pctFine.format(c));
+const oneIn = c => (c > 0 ? `1 em ${fmt.format(Math.round(1 / c))}` : '—');
+
+/** "2 d 03:14:09" until a moment. */
+function countdown(ms) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    return (d ? `${d} d ` : '') + [h, m, sec].map(n => String(n).padStart(2, '0')).join(':');
+}
+
+/** Two-part bar with its own names and colours (classes a / b). */
+function pairBar(label, a, aName, b, bName, bClass = 'gold') {
+    const total = a + b;
+    return el('div', { class: 'split' },
+        el('div', { class: 'splitLabel', text: label }),
+        el('div', { class: 'splitTrack' },
+            a ? el('div', { class: 'safe', style: `flex:${a}` }) : null,
+            b ? el('div', { class: bClass, style: `flex:${b}` }) : null,
+            total ? null : el('div', { class: 'empty', style: 'flex:1' })),
+        el('div', { class: 'splitText' },
+            el('span', { class: 'key safe' }), el('span', { text: `${aName} ${fmt.format(a)}` + (total ? ` (${pct(a, total)})` : '') }),
+            el('span', { class: `key ${bClass}` }), el('span', { text: `${bName} ${fmt.format(b)}` + (total ? ` (${pct(b, total)})` : '') })));
+}
+
+/** One bar per value, all on the same scale, with the value written after it. */
+function valueBars(rows) {
+    const max = Math.max(1, ...rows.map(r => r.value));
+    return el('div', { class: 'valueBars' }, ...rows.map(r => el('div', { class: 'valueRow' },
+        el('span', { class: 'valueLabel', text: r.label }),
+        el('span', { class: 'valueTrack' }, el('span', { class: `valueFill ${r.cls ?? ''}`, style: `width:${Math.max(r.value ? 1.5 : 0, 100 * r.value / max)}%` })),
+        el('span', { class: 'valueText', text: r.text }))));
+}
+
+function claimKey(prize, profile, weekStart) {
+    return `${profile}|${prize.scope === 'season' ? 'season' : weekStart}`;
+}
+
+function drawTreasure(s) {
+    const list = events();
+    const now = Date.now();
+    const reset = treasure.DEFAULT_RESET;
+    const weekStart = treasure.weekStart(now, reset), weekEnd = weekStart + 7 * 86400000;
+    const all = s.profile?.matches ?? [];
+    const times = treasure.chestTimes(all, stats.when, stats.CHEST_KINDS);
+    const weekTimes = times.filter(t => t >= weekStart && t < weekEnd);
+    const seasonTimes = times.filter(t => t >= treasure.SEASON.start && t < treasure.SEASON.end);
+    const inEvent = arr => arr.filter(t => treasure.eventAt(list, t)).length;
+
+    // Teammates' chests (minimum seen, no times): counted at the base chance, by the match's start.
+    const mateChests = (from, to) => all.filter(m => { const t = stats.when(m).getTime(); return t >= from && t < to; })
+        .reduce((sum, m) => sum + (m.teammates ?? []).reduce((a, t) => a + (t.chestsSeen ?? 0), 0), 0);
+    const team = data.settings.chanceTeam;
+    $('chanceTeam').checked = team;
+
+    // Next / current Treasure Hour
+    const current = list.find(e => now >= e.start && now < e.end);
+    const next = list.find(e => e.start > now);
+    $('nextEvent').dataset.until = String(current ? current.end : next ? next.start : '');
+    $('nextEvent').dataset.label = current ? 'Acontecendo agora · termina em' : next ? 'Começa em' : '';
+    const describe = e => `${weekdayTime.format(new Date(e.start))} até ${timeOnly.format(new Date(e.end))} · Roupa Dourada ${mult(e.gold)}, token ${mult(e.shop)}, veículo ${mult(e.vehicle)}` + (e.status === 'previsto' ? ' (previsto: a Epic ainda não anunciou)' : '');
+    $('nextEventText').textContent = current ? `Agora: ${describe(current)}. Abra o máximo de baús que puder.`
+        : next ? `${describe(next)}.` : 'Nenhuma Hora do Tesouro futura na lista. Adicione as próximas em "Horas do Tesouro", abaixo, quando a Epic anunciar.';
+    $('weekReset').dataset.until = String(weekEnd);
+    $('weekReset').dataset.label = 'Prêmios da semana trocam em';
+
+    const teamWeek = team ? mateChests(weekStart, weekEnd) : 0;
+    $('weekText').textContent = `Semana desde ${weekdayTime.format(new Date(weekStart))}: você abriu ${plural(weekTimes.length, 'baú', 'baús')}, ${fmt.format(inEvent(weekTimes))} dentro de uma Hora do Tesouro.`
+        + (team ? ` Seus companheiros foram vistos abrindo pelo menos ${fmt.format(teamWeek)}.` : '')
+        + ' Cada baú conta pelo horário em que foi aberto, então uma partida que atravessa a troca entra só com os baús de depois dela.';
+    $('weekBars').replaceChildren(pairBar('Baús desta semana', weekTimes.length - inEvent(weekTimes), 'Fora da Hora do Tesouro', inEvent(weekTimes), 'Na Hora do Tesouro'));
+
+    // Chances
+    const claims = data.settings.claims;
+    const profile = s.profile?.key ?? '';
+    const rows = treasure.PRIZES.map(prize => {
+        const scopeTimes = prize.scope === 'season' ? seasonTimes : weekTimes;
+        const extra = team ? (prize.scope === 'season' ? mateChests(treasure.SEASON.start, treasure.SEASON.end) : teamWeek) : 0;
+        const result = treasure.chanceOf(prize, scopeTimes, list, extra);
+        const key = claimKey(prize, profile, weekStart);
+        const owned = (claims[key] ?? []).includes(prize.id);
+        const boosted = prize.boost ? `${fmt.format(Math.round(prize.den / (current?.[prize.boost] ?? 1)))}` : null;
+        return { prize, result, key, owned, boosted, chests: scopeTimes.length + extra };
+    });
+    const gold = rows[0];
+    $('chanceText').textContent = gold.owned ? 'Você marcou a Roupa Dourada desta semana como já ganha.'
+        : `Chance de já ter tirado a Roupa Dourada nesta semana: ${chanceText(gold.result.chance)} (${oneIn(gold.result.chance)}), com ${plural(gold.chests, 'baú', 'baús')}. Token pirata na temporada: ${chanceText(rows[1].result.chance)}.`;
+    table($('chances'), [{ t: 'Prêmio' }, { t: 'Por baú', n: true }, { t: 'Baús contados', n: true }, { t: 'Sua chance', n: true }, { t: 'Já tenho' }],
+        rows.map(r => [
+            { t: r.prize.name, c: 'wrap' },
+            `1 em ${fmt.format(r.prize.den)}` + (current && r.prize.boost ? ` (agora 1 em ${r.boosted})` : ''),
+            fmt.format(r.chests),
+            r.prize.scope === 'repeat' ? `${fmt1.format(r.result.expected)} esperados` : r.owned ? 'ganho' : chanceText(r.result.chance),
+            r.prize.scope === 'repeat' ? '' : (r.owned ? '✓' : '—'),
+        ]), '');
+    // "Já tenho" toggles (the cells are rebuilt as checkboxes).
+    [...$('chances').querySelectorAll('tbody tr')].forEach((tr, i) => {
+        const r = rows[i];
+        if (r.prize.scope === 'repeat') return;
+        const box = el('input', { type: 'checkbox', 'aria-label': `Já tenho: ${r.prize.name}` });
+        box.checked = r.owned;
+        box.addEventListener('change', () => {
+            const set = new Set(data.settings.claims[r.key] ?? []);
+            if (box.checked) set.add(r.prize.id); else set.delete(r.prize.id);
+            data.settings.claims[r.key] = [...set];
+            persist();
+        });
+        tr.lastChild.replaceChildren(box);
+    });
+
+    // Goal
+    const goal = data.settings.goal;
+    const goalRows = rows.filter(r => r.prize.scope !== 'repeat');
+    if (!$('goalPrize').options.length) {
+        $('goalPrize').replaceChildren(...goalRows.map(r => el('option', { value: r.prize.id, text: r.prize.name })));
+    }
+    const pick = goalRows.find(r => r.prize.id === goal.prize) ?? goalRows[0];
+    $('goalPrize').value = pick.prize.id;
+    $('goalTarget').value = String(goal.target);
+    // The boost of the Treasure Hour going on, or the next one (sessions do not all give the same boost).
+    const boost = pick.prize.boost ? Math.max(1, (current ?? next ?? list.at(-1))?.[pick.prize.boost] ?? 1) : 1;
+    const needBase = treasure.chestsFor(pick.prize, goal.target, pick.result.chance, 1);
+    const needEvent = treasure.chestsFor(pick.prize, goal.target, pick.result.chance, boost);
+    $('goalText').textContent = pick.owned ? `Você já tem: ${pick.prize.name}.`
+        : pick.result.chance >= goal.target ? `Você já passou de ${pctFine.format(goal.target)} de chance para ${pick.prize.name}.`
+            : `Para chegar a ${pctFine.format(goal.target)} de chance de ${pick.prize.name} ${pick.prize.scope === 'season' ? 'na temporada' : 'nesta semana'}, faltam cerca de ${plural(needBase, 'baú', 'baús')} fora da Hora do Tesouro`
+              + (boost > 1 ? `, ou ${plural(needEvent, 'baú', 'baús')} dentro dela (${mult(boost)}).` : '. A Hora do Tesouro não aumenta este prêmio.')
+              + (weekTimes.length ? ` No seu ritmo desta semana (${fmt1.format(weekTimes.length / Math.max(1, s.rows.filter(r => r.date.getTime() >= weekStart).length))} baús por partida), isso dá umas ${fmt.format(Math.ceil(needBase / Math.max(1, weekTimes.length / Math.max(1, s.rows.filter(r => r.date.getTime() >= weekStart).length))))} partidas fora do evento.` : '');
+    $('goalBars').replaceChildren(pick.owned || pick.result.chance >= goal.target ? '' : valueBars([
+        { label: 'Fora do evento', value: needBase, text: plural(needBase, 'baú', 'baús'), cls: 'safe' },
+        ...(boost > 1 ? [{ label: `Na Hora do Tesouro (${mult(boost)})`, value: needEvent, text: plural(needEvent, 'baú', 'baús'), cls: 'gold' }] : []),
+    ]));
+
+    drawWeeks(list, times, now, reset);
+    drawEvents(list, times, now);
+    tickCountdowns();
+}
+
+/** One row per prize week of the season: chests, how many inside a Treasure Hour, and the Gold Outfit chance of that week. */
+function drawWeeks(list, times, now, reset) {
+    const gold = treasure.PRIZES[0], vehicle = treasure.PRIZES[2];
+    const weeks = [];
+    for (let start = treasure.SEASON.start, n = 1; start < Math.min(now, treasure.SEASON.end); n++) {
+        const end = Math.min(treasure.weekStart(start, reset) + 7 * 86400000, treasure.SEASON.end);
+        const inside = times.filter(t => t >= start && t < end);
+        weeks.push({ n, start, end, chests: inside.length, event: inside.filter(t => treasure.eventAt(list, t)).length,
+            gold: treasure.chanceOf(gold, inside, list).chance, vehicle: treasure.chanceOf(vehicle, inside, list).chance, current: now >= start && now < end });
+        start = end;
+    }
+    const max = Math.max(1, ...weeks.map(w => w.chests));
+    $('weekHistory').replaceChildren(...weeks.map(w => el('div', { class: 'weekRow' + (w.current ? ' current' : '') },
+        el('span', { class: 'valueLabel', text: `Semana ${w.n}${w.current ? ' (atual)' : ''}` }),
+        el('span', { class: 'weekTrack' },
+            w.chests - w.event ? el('span', { class: 'safe', style: `width:${100 * (w.chests - w.event) / max}%` }) : null,
+            w.event ? el('span', { class: 'gold', style: `width:${100 * w.event / max}%` }) : null),
+        el('span', { class: 'valueText', text: `${plural(w.chests, 'baú', 'baús')}` + (w.event ? ` · ${fmt.format(w.event)} no evento` : '') + ` · roupa ${chanceText(w.gold)} · veículo ${chanceText(w.vehicle)}` }))));
+    const best = weeks.reduce((a, w) => (w.chests > (a?.chests ?? -1) ? w : a), null);
+    $('weekHistoryText').textContent = weeks.length && best?.chests
+        ? `Sua semana com mais baús foi a ${best.n}: ${plural(best.chests, 'baú', 'baús')}, ${fmt.format(best.event)} deles numa Hora do Tesouro. As chances de cada semana não se somam, porque a roupa e o veículo mudam a cada troca.`
+        : 'Nenhum baú com horário nas semanas da temporada ainda.';
+}
+
+function drawEvents(list, times, now) {
+    const edited = !!data.settings.events;
+    $('eventsNote').textContent = (edited ? 'Lista editada por você.' : 'Lista padrão, conferida em 16/11/2026 em sites que acompanham os anúncios da Epic.')
+        + ' Horários no seu fuso. "Previsto" é o padrão de sábado que ainda não foi anunciado: confira e ajuste quando a Epic anunciar.';
+    $('eventsEdit').textContent = editingEvents ? 'Pronto' : 'Editar horários';
+    $('eventsAdd').hidden = $('eventsReset').hidden = !editingEvents;
+    const target = $('events');
+    target.replaceChildren();
+    const head = ['Início', 'Fim', 'Roupa ×', 'Token ×', 'Veículo ×', 'Situação', 'Seus baús', ''];
+    target.append(el('thead', {}, el('tr', {}, ...head.map((h, i) => el('th', { class: i >= 2 && i <= 4 || i === 6 ? 'n' : '', text: h })))));
+    const body = el('tbody');
+    list.forEach((event, index) => {
+        const opened = times.filter(t => t >= event.start && t < event.end).length;
+        const state = now >= event.end ? 'passou' : now >= event.start ? 'agora' : event.status;
+        let cells;
+        if (editingEvents) {
+            const input = (type, value, key) => {
+                const field = el('input', { type, value, step: type === 'number' ? '0.5' : '60', min: type === 'number' ? '1' : '' });
+                field.addEventListener('change', () => {
+                    const next = events();
+                    next[index][key] = type === 'number' ? Number(field.value) || 1 : new Date(field.value).getTime();
+                    if (key === 'start' && next[index].end <= next[index].start) next[index].end = next[index].start + 2 * 3600000;
+                    next[index].status = 'meu';
+                    saveEvents(next);
+                });
+                return el('td', {}, field);
+            };
+            const remove = el('button', { type: 'button', class: 'small danger', text: 'Tirar' });
+            remove.addEventListener('click', () => { const next = events(); next.splice(index, 1); saveEvents(next); });
+            cells = [input('datetime-local', localInput(new Date(event.start)), 'start'), input('datetime-local', localInput(new Date(event.end)), 'end'),
+                input('number', event.gold, 'gold'), input('number', event.shop, 'shop'), input('number', event.vehicle, 'vehicle'),
+                el('td', { text: state }), el('td', { class: 'n', text: fmt.format(opened) }), el('td', {}, remove)];
+        } else {
+            const filterButton = el('button', { type: 'button', class: 'small', text: 'Ver baús' });
+            filterButton.addEventListener('click', () => {
+                $('period').value = 'custom';
+                $('rangeFrom').value = localInput(new Date(event.start));
+                $('rangeTo').value = localInput(new Date(event.end));
+                filter.period = 'custom';
+                tab = 'resumo';
+                applyRange();
+                window.scrollTo({ top: $('report').offsetTop - 10, behavior: 'smooth' });
+            });
+            cells = [el('td', { text: weekdayTime.format(new Date(event.start)) }), el('td', { text: timeOnly.format(new Date(event.end)) }),
+                el('td', { class: 'n', text: mult(event.gold) }), el('td', { class: 'n', text: mult(event.shop) }), el('td', { class: 'n', text: mult(event.vehicle) }),
+                el('td', { class: state === 'agora' ? 'win' : state === 'previsto' ? 'muted' : '', text: state }),
+                el('td', { class: 'n', text: event.start > now ? '' : fmt.format(opened) }),
+                el('td', {}, event.start > now ? null : filterButton)];
+        }
+        body.append(el('tr', {}, ...cells));
+    });
+    target.append(body);
+}
+
+function saveEvents(list) {
+    data.settings.events = list;
+    persist();
+}
+
+/** Countdowns tick once a second while the Treasure Hour tab is open. */
+function tickCountdowns() {
+    for (const box of [$('nextEvent'), $('weekReset')]) {
+        const until = Number(box.dataset.until);
+        box.textContent = until ? `${box.dataset.label} ${countdown(until - Date.now())}` : '';
+    }
+}
+setInterval(() => {
+    if (tab !== 'tesouro' || document.hidden) return;
+    const first = [$('nextEvent'), $('weekReset')].some(box => Number(box.dataset.until) && Number(box.dataset.until) <= Date.now());
+    if (first) render(); else tickCountdowns();
+}, 1000);
+
+$('chanceTeam').addEventListener('change', event => { data.settings.chanceTeam = event.target.checked; persist(); });
+$('goalPrize').addEventListener('change', event => { data.settings.goal = { ...data.settings.goal, prize: event.target.value }; persist(); });
+$('goalTarget').addEventListener('change', event => { data.settings.goal = { ...data.settings.goal, target: Number(event.target.value) }; persist(); });
+$('eventsEdit').addEventListener('click', () => { editingEvents = !editingEvents; render(); });
+$('eventsAdd').addEventListener('click', () => {
+    const list = events();
+    const last = list.at(-1);
+    const start = last ? last.start + 7 * 86400000 : Date.now();
+    list.push({ start, end: start + 2 * 3600000, gold: last?.gold ?? 7.5, shop: last?.shop ?? 1.5, vehicle: last?.vehicle ?? 10, status: 'meu' });
+    saveEvents(list);
+});
+$('eventsReset').addEventListener('click', () => {
+    if (!confirm('Voltar à lista padrão de Horas do Tesouro? As suas mudanças na lista serão perdidas.')) return;
+    data.settings.events = null;
+    persist();
+});
 
 const WEEKDAYS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 const WEEKDAYS_LONG = ['domingos', 'segundas', 'terças', 'quartas', 'quintas', 'sextas', 'sábados'];
@@ -549,6 +872,7 @@ function drawChart(days) {
 
 // ---- one match ------------------------------------------------------------------------------------------
 function openMatch(m) {
+    m = m.original ?? m; // a match cut by the time window: the detail shows all of it
     openKey = store.matchKey(m);
     const date = stats.when(m);
     $('matchTitle').textContent = `${modeName(m.playlist)} · ${dateShort.format(date)}`;
@@ -591,6 +915,11 @@ function openMatch(m) {
             el('li', { text: `${treasureName(find)}` + (find.obtainedAtSeconds != null ? ` às ${clock(find.obtainedAtSeconds)}` : '') + (find.sourceKind ? ` · ${kindName(find.sourceKind)}` : '') + (find.storm?.inStorm != null ? ` · ${find.storm.inStorm ? 'na tempestade' : 'na zona segura'}` : '') }))));
     }
 
+    const teamFinds = (m.nearbyTreasureFinds ?? []).filter(f => f.scope === 'team');
+    if (teamFinds.length) {
+        body.push(el('h3', { text: 'Tesouros do time' }), el('ul', {}, ...teamFinds.map(find =>
+            el('li', { text: `${treasureName(find)}${find.isPirateToken ? ' · TOKEN PIRATA' : ''} · achado por ${find.finder || 'companheiro'}` + (find.obtainedAtSeconds != null ? ` às ${clock(find.obtainedAtSeconds)}` : '') }))));
+    }
     if (m.teammates.length) {
         // With the teammate's own replay in the history, their exact count replaces the minimum seen from here.
         body.push(el('h3', { text: 'Equipe' }), el('ul', {}, ...m.teammates.map(mate => {
@@ -636,6 +965,14 @@ function log(name, text, kind) {
     while (list.children.length > 300) list.lastChild.remove();
 }
 
+/** The useful part of an error: the runtime repeats itself and appends a long stack. */
+function shortError(message) {
+    const text = String(message ?? 'falha na leitura');
+    const assertion = /\[MONO\][^\n]*/.exec(text)?.[0];
+    const first = text.split('\n')[0].replace(/(Error: )?Assert failed: \.NET runtime already exited with \d+ ?/g, '').trim();
+    return (assertion ?? first ?? text).slice(0, 220) || 'o analisador parou';
+}
+
 /** Same decisions as the desktop tool (Tracker.Process). Returns 'added', 'known' (already counted), 'skipped' or null (nothing to remember). */
 function record(file, fileKey, result) {
     if (result.status === 'recording') {
@@ -644,7 +981,7 @@ function record(file, fileKey, result) {
     }
     const match = result.status === 'ok' ? store.cleanMatch(result.match) : null;
     if (!match) {
-        log(file.name, result.status === 'invalid' ? 'não é um replay do Fortnite' : `erro: ${result.message ?? 'falha na leitura'}`, 'err');
+        log(file.name, result.status === 'invalid' ? 'não é um replay do Fortnite' : `erro: ${shortError(result.message)}`, 'err');
         return null; // not remembered: adding the file again tries again
     }
     // Web-only storm analysis: one point per chest and per treasure, in the same order.
@@ -673,19 +1010,54 @@ function record(file, fileKey, result) {
         return 'known';
     }
     if (existing) match.analyzedAtUtc = existing.match.analyzedAtUtc;
-    data.matches[key] = { supported: !!result.supportedVersion, match };
+    data.matches[key] = { supported: !!result.supportedVersion && result.countedPlaylist !== false, match };
     data.files[fileKey] = key;
     data.settings.profile ??= stats.profileKey(match);
+    if (existing?.match.storm && !match.storm && existing.match.analyzerVersion === match.analyzerVersion) {
+        // Read again without the storm: keep what an earlier read found.
+        match.storm = existing.match.storm;
+        match.stormVersion = existing.match.stormVersion;
+        match.chests.forEach((c, i) => { c.storm = existing.match.chests[i]?.storm; });
+        match.treasureFinds.forEach((f, i) => { f.storm = existing.match.treasureFinds[i]?.storm; });
+    }
     const text = plural(match.chestsOpened, 'baú', 'baús') + (match.treasureFinds.length ? `, ${plural(match.treasureFinds.length, 'tesouro', 'tesouros')}` : '');
-    if (result.supportedVersion) log(file.name, text, 'ok');
-    else log(file.name, `${text} · versão anterior à v43 (fora das estatísticas)`, 'skip');
-    return existing ? 'known' : 'added';
+    const took = file.seconds != null ? ` · ${fmt1.format(file.seconds)} s` : '';
+    if (result.supportedVersion) log(file.name, text + took, 'ok');
+    else if (result.countedPlaylist === false) log(file.name, `${text}${took} · modo fora da contagem (não é Battle Royale padrão)`, 'skip');
+    else log(file.name, `${text}${took} · versão anterior à v43 (fora das estatísticas)`, 'skip');
+    return existing ? 'updated' : 'added';
+}
+
+/** A match that has chests but not the storm data of the analyzer now loaded. */
+function needsStorm(match) {
+    return !!match && !!engine && match.isBattleRoyale !== false && (match.chests?.length ?? 0) + (match.treasureFinds?.length ?? 0) > 0
+        && (match.stormVersion ?? 0) < engine.stormVersion;
+}
+/** Read by an older analyzer, or (when the storm is read) without the storm data of this version. */
+function needsUpdate(match, withStorm = data.settings.readStorm) {
+    return !!match && !!engine && ((match.analyzerVersion ?? 0) < engine.analyzerVersion || (withStorm && needsStorm(match)));
+}
+
+let upgradeNext = false;
+function drawUpgrade() {
+    const entries = engine ? Object.values(data.matches) : [];
+    const older = entries.filter(e => (e.match.analyzerVersion ?? 0) < engine.analyzerVersion).length;
+    const noStorm = data.settings.readStorm ? entries.filter(e => (e.match.analyzerVersion ?? 0) >= (engine?.analyzerVersion ?? 0) && needsStorm(e.match)).length : 0;
+    const missing = older + noStorm;
+    $('upgradeBox').hidden = $('upgradeText').hidden = missing === 0;
+    const parts = [];
+    if (older) parts.push(`${plural(older, 'partida foi lida', 'partidas foram lidas')} por uma versão anterior do analisador (a nova reconhece o token pirata e os tesouros do time)`);
+    if (noStorm) parts.push(`${plural(noStorm, 'partida não tem', 'partidas não têm')} os dados de tempestade, mapa e rota`);
+    $('upgradeText').textContent = missing
+        ? `${parts.join('; ')}. Para atualizá-las, use o botão acima e escolha a pasta (ou os arquivos) de novo: só elas são relidas, e você pode parar a qualquer momento.`
+        : '';
 }
 
 /** A plain .replay file, as something addFiles can read later. */
 const fromFile = file => ({ name: file.name, lastModified: file.lastModified, key: `${file.name}|${file.size}|${file.lastModified}`, getFile: async () => file });
 
-async function addFiles(files) {
+/** upgrade: also read again the replays already counted whose match lacks the storm data of this version. */
+async function addFiles(files, { upgrade = false } = {}) {
     const replays = files.filter(f => /\.replay$/i.test(f.name));
     const zips = files.filter(f => /\.zip$/i.test(f.name));
     if (replays.length + zips.length === 0) {
@@ -694,10 +1066,12 @@ async function addFiles(files) {
     }
     if (busy || !engine) return;
     busy = true;
+    stopRequested = false;
     setButtons();
+    $('stopImport').hidden = false;
     $('progress').hidden = false;
     $('progressBar').style.width = '0';
-    let added = 0, known = 0, unsaved = 0, lastSave = Date.now();
+    let added = 0, known = 0, updated = 0, unsaved = 0, lastSave = Date.now();
     // The whole history is one record: on a large import it is written every few files, not after each one.
     const flush = async force => {
         if (unsaved === 0 || (!force && unsaved < 15 && Date.now() - lastSave < 4000)) return;
@@ -723,43 +1097,81 @@ async function addFiles(files) {
         }
 
         // A newer analyzer reads every replay again (records are replaced, never duplicated).
-        if (data.analyzerVersion !== engine.analyzerVersion || data.stormVersion !== engine.stormVersion) {
-            data.files = {};
-            data.analyzerVersion = engine.analyzerVersion;
-            data.stormVersion = engine.stormVersion;
-        }
+        // A newer count reads everything again. A newer storm analysis does not: the old matches are only
+        // completed when asked ("Completar partidas antigas"), since reading a whole folder again takes long.
+        // Neither a newer analyzer nor a newer storm analysis reads everything again by itself (a whole folder
+        // takes long): "Completar partidas antigas" reads again only the matches that need it.
+        data.analyzerVersion = engine.analyzerVersion;
+        data.stormVersion = engine.stormVersion;
+        const withStorm = data.settings.readStorm;
+        let stopped = false;
         sources.sort((a, b) => a.lastModified - b.lastModified);
         for (let i = 0; i < sources.length; i++) {
+            if (stopRequested) {
+                stopped = true;
+                break;
+            }
             const source = sources[i];
-            setStatus(`Lendo ${i + 1} de ${sources.length}: ${source.name}`);
-            $('progressBar').style.width = `${(100 * i) / sources.length}%`;
-            if (data.files[source.key]) {
+            const seen = data.files[source.key];
+            if (seen && !(upgrade && needsUpdate(data.matches[seen]?.match, withStorm))) {
                 known++;
                 continue;
             }
-            let result;
-            try {
-                result = await engine.analyze(await source.getFile());
-            } catch (error) {
-                result = { status: 'error', message: String(error?.message ?? error) };
+            const average = readTimes.length ? readTimes.slice(-10).reduce((a, b) => a + b, 0) / Math.min(10, readTimes.length) : null;
+            setStatus(`Lendo ${i + 1} de ${sources.length}: ${source.name}` + (average ? ` (cerca de ${fmt1.format(average)} s cada)` : ''));
+            $('progressBar').style.width = `${(100 * i) / sources.length}%`;
+            // Let the text and the bar paint before the analyzer holds the page.
+            await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+            const began = performance.now();
+            let result = await analyzeOnce(source, withStorm);
+            // The runtime stopped for good: start a fresh analyzer and try this replay once more.
+            if (result.status === 'error' && isFatal(result.message) && engine.restart) {
+                setStatus(`O analisador parou ao ler ${source.name}. Reiniciando…`);
+                try {
+                    await engine.restart();
+                    result = await analyzeOnce(source, withStorm);
+                    if (result.status === 'error' && isFatal(result.message)) {
+                        // The same replay stops it twice: leave it out and go on with a fresh analyzer.
+                        result = { status: 'error', message: 'este replay faz o analisador parar; ele foi pulado' };
+                        await engine.restart().catch(() => {});
+                    }
+                } catch (error) {
+                    result = { status: 'error', message: `não foi possível reiniciar o analisador (${error.message})` };
+                }
             }
+            const seconds = (performance.now() - began) / 1000;
+            readTimes.push(seconds);
+            if (readTimes.length > 200) readTimes.shift();
+            console.info(`[Chest Lookout] ${source.name}: ${fmt1.format(seconds)} s` + (withStorm ? ' (com tempestade)' : ''));
+            source.seconds = seconds;
             const outcome = record(source, source.key, result);
             if (outcome) {
                 added += outcome === 'added' ? 1 : 0;
                 known += outcome === 'known' ? 1 : 0;
+                updated += outcome === 'updated' ? 1 : 0;
                 unsaved++;
                 await flush(false);
                 render();
             }
         }
-        $('progressBar').style.width = '100%';
-        setStatus(`Pronto: ${plural(added, 'partida nova', 'partidas novas')}` + (known ? `, ${fmt.format(known)} já contada(s) antes` : '') + '.');
+        $('progressBar').style.width = stopped ? $('progressBar').style.width : '100%';
+        setStatus((stopped ? 'Leitura parada: ' : 'Pronto: ') + plural(added, 'partida nova', 'partidas novas') + (updated ? `, ${plural(updated, 'partida completada', 'partidas completadas')}` : '') + (known ? `, ${fmt.format(known)} já contada(s) antes` : '') + '.'
+            + (stopped ? ' O que já foi lido está salvo; adicione os arquivos de novo para continuar.' : ''));
     } finally {
         await flush(true);
         busy = false;
+        $('stopImport').hidden = true;
         setButtons();
         render();
         setTimeout(() => { if (!busy) $('progress').hidden = true; }, 1200);
+    }
+}
+
+async function analyzeOnce(source, withStorm) {
+    try {
+        return await engine.analyze(await source.getFile(), withStorm);
+    } catch (error) {
+        return { status: 'error', message: String(error?.message ?? error) };
     }
 }
 
@@ -967,7 +1379,7 @@ function setStatus(text, error = false) {
     }
 }
 function setButtons() {
-    for (const id of ['pickFiles', 'pickFolder', 'refresh', 'rememberFolder', 'import', 'reset']) $(id).disabled = busy || (!engine && !['import', 'reset'].includes(id));
+    for (const id of ['pickFiles', 'pickFolder', 'upgrade', 'refresh', 'rememberFolder', 'import', 'reset']) $(id).disabled = busy || (!engine && !['import', 'reset'].includes(id));
 }
 async function persist() {
     render();
@@ -975,13 +1387,21 @@ async function persist() {
     drawNotices();
 }
 
-$('pickFiles').addEventListener('click', () => $('fileInput').click());
-$('pickFolder').addEventListener('click', () => $('folderInput').click());
+$('pickFiles').addEventListener('click', () => { upgradeNext = false; $('fileInput').click(); });
+$('upgrade').addEventListener('click', () => { upgradeNext = true; $('folderInput').click(); });
+$('stopImport').addEventListener('click', () => {
+    stopRequested = true;
+    $('stopImport').hidden = true;
+    setStatus('Parando depois do replay que está sendo lido…');
+});
+$('pickFolder').addEventListener('click', () => { upgradeNext = false; $('folderInput').click(); });
 for (const id of ['fileInput', 'folderInput']) {
     $(id).addEventListener('change', event => {
         const files = [...event.target.files];
         event.target.value = '';
-        addFiles(files);
+        const upgrade = upgradeNext;
+        upgradeNext = false;
+        addFiles(files, { upgrade });
     });
 }
 const drop = $('drop');
@@ -1001,14 +1421,29 @@ for (const box of document.querySelectorAll('[data-setting]')) {
     box.addEventListener('change', () => { data.settings[box.dataset.setting] = box.checked; persist(); });
 }
 $('profile').addEventListener('change', event => { data.settings.profile = event.target.value; resetLists(); persist(); });
-$('period').addEventListener('change', event => { filter.period = event.target.value; resetLists(); render(); });
+$('period').addEventListener('change', event => {
+    filter.period = event.target.value;
+    if (filter.period === 'custom') {
+        // The last window chosen, or today from midnight until the next full hour.
+        const saved = data.settings.range;
+        const now = new Date();
+        $('rangeFrom').value = saved?.from ?? localInput(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
+        $('rangeTo').value = saved?.to ?? localInput(new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1));
+        applyRange();
+        return;
+    }
+    filter.range = null;
+    resetLists();
+    render();
+});
+for (const id of ['rangeFrom', 'rangeTo']) $(id).addEventListener('change', applyRange);
 $('size').addEventListener('change', event => { filter.size = event.target.value; resetLists(); render(); });
 for (const name of Object.keys(LIST)) {
     $(`more-${name}`).addEventListener('click', () => { shownRows[name] += LIST[name][1]; render(); });
     $(`less-${name}`).addEventListener('click', () => { shownRows[name] = LIST[name][0]; render(); });
 }
 for (const button of document.querySelectorAll('[data-tab-button]')) {
-    button.addEventListener('click', () => { tab = button.dataset.tabButton; drawTabs(); });
+    button.addEventListener('click', () => { tab = button.dataset.tabButton; drawTabs(); if (tab === 'tesouro') tickCountdowns(); });
 }
 $('chartDays').addEventListener('change', event => { chartDays = Number(event.target.value) === 30 ? 30 : 7; render(); });
 $('initial').addEventListener('change', event => {
@@ -1069,6 +1504,7 @@ $('reset').addEventListener('click', async () => {
     resetLists();
     filter.period = 'all';
     filter.size = '';
+    filter.range = null;
     $('log').replaceChildren();
     await persist();
     setStatus(count ? 'Histórico apagado. O backup foi baixado.' : 'Histórico apagado.');
@@ -1078,7 +1514,10 @@ $('copyDiag').addEventListener('click', async () => {
     const entries = Object.values(data.matches);
     const lines = [
         `Chest Lookout ${APP_VERSION}`,
-        `analisador: ${engine ? `${engine.analyzerVersion} (${engine.mode})` : 'não carregado'}` + (startup.ms != null ? `, ${startup.ms} ms` : '') + (startup.fallback ? ', plano B' : ''),
+        `analisador: ${engine ? `${engine.analyzerVersion} (${engine.mode}${engine.restarts ? `, reiniciado ${engine.restarts}×` : ''})` : 'não carregado'}` + (startup.ms != null ? `, ${startup.ms} ms` : '') + (startup.fallback ? ', plano B' : ''),
+        `leitura: ${data.settings.readStorm ? 'com tempestade' : 'só contagem'}` + (readTimes.length
+            ? `, ${readTimes.length} replays nesta visita, média ${fmt1.format(readTimes.reduce((a, b) => a + b, 0) / readTimes.length)} s, maior ${fmt1.format(Math.max(...readTimes))} s` : ', nenhum replay lido nesta visita'),
+        `memória da página: ${performance.memory ? `${Math.round(performance.memory.usedJSHeapSize / 1048576)} MB usados de ${Math.round(performance.memory.jsHeapSizeLimit / 1048576)} MB` : 'indisponível'}`,
         `navegador: ${navigator.userAgent}`,
         `histórico: ${entries.length} partidas (${entries.filter(e => !e.supported).length} anteriores à v43), ${Object.keys(data.files).length} arquivos lidos, ${Object.keys(data.removed).length} excluídas`,
         `versões do jogo: ${[...new Set(entries.map(e => e.match.gameVersion).filter(Boolean))].slice(-5).join(', ') || '—'}`,

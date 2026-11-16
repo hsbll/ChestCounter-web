@@ -16,6 +16,10 @@ O que não existe aqui: contagem ao vivo durante a partida, overlay, página par
 
 - **Filtros** por período e por modo (solo, duplas, trios, esquadrões): valem para os números, as tabelas e a
   imagem do resumo.
+- **Horário escolhido** (Período → Escolher datas e horas): conta os baús e tesouros de uma janela de tempo, por
+  exemplo um evento. Cada baú tem seu próprio horário (início da partida + segundos no replay), então uma
+  partida cortada pela janela entra só com o que foi aberto dentro dela. Caixas de munição e comida e os baús
+  dos companheiros só existem como total da partida e ficam de fora nas partidas cortadas.
 - **Detalhe da partida:** clique em uma linha de *Partidas* para ver os baús na ordem em que foram abertos, os
   tesouros e a equipe. Dali também se exclui a partida (ela não volta se o replay for adicionado de novo).
 - **Duas contas na mesma partida** ficam com um registro cada. Com o replay do companheiro no histórico, o
@@ -36,10 +40,24 @@ O que não existe aqui: contagem ao vivo durante a partida, overlay, página par
   versão web (`Storm.cs`): lê o replay uma segunda vez, no modo completo do leitor, por isso a leitura demora
   mais. Partidas lidas antes dela precisam do replay de novo.
 - **Mapa** (`map.js`): pontos dos baús com cor por tempestade, tipo, fase ou momento; só tesouros; calor dos
-  baús; calor da rota (por onde você andou); onde você pousa (primeiro baú de cada partida). Dá para aproximar,
+  baús (mancha suave, do azul ao amarelo); rotas (uma linha por partida, mais clara onde se repetem); onde você pousa (primeiro baú de cada partida). Dá para aproximar,
   arrastar e tocar num ponto para ver o baú. O detalhe de cada partida tem o mapa dela, com a rota e os baús
   numerados. Não há imagem do mapa do jogo por baixo.
+- **Hora do Tesouro** (`treasure.js`): contagem regressiva para a próxima Hora do Tesouro e para a troca semanal
+  de prêmios (domingo 14:00 UTC, horário relatado pela comunidade); baús da semana atual, dentro e fora do evento;
+  um resumo por semana da temporada; a chance acumulada de cada prêmio, somando baú por baú com o multiplicador
+  do horário em que ele foi aberto (chances oficiais da Epic); "Já tenho" para tirar um prêmio da conta; e uma
+  meta (quantos baús faltam para chegar a 10–90% de chance, fora e dentro do evento). A lista de Horas do Tesouro
+  vem preenchida (conferida em 16/11/2026), pode ser editada na página, e cada hora tem "Ver baús", que aplica
+  o filtro de data e hora daquele evento.
 - **Gráficos:** baús por minuto de partida, por dia da semana e hora, e recordes.
+- **Leitura** (Ajustes): "Ler tempestade, mapa e rota" pode ser desligado; cada replay passa a ser lido uma vez
+  só (cerca de 2,5× mais rápido). Uma nova versão da análise de tempestade não relê a pasta inteira sozinha:
+  o botão **Completar partidas antigas** relê só as partidas que precisam. **Parar a leitura** interrompe uma
+  importação longa, e o registro mostra quanto tempo cada replay levou.
+- **Token pirata e tesouros do time** (analisador v16, do ChestCounter v2.0.25): o bloco "Token pirata" diz se
+  algum já apareceu, e os tesouros achados por companheiros podem entrar na conta (Ajustes → Equipe). Partidas
+  lidas por um analisador anterior são atualizadas com **Completar partidas antigas**, nunca sozinhas.
 - **Copiar diagnóstico** (Ajustes): versão, navegador, modo do analisador e os últimos erros, para pedir ajuda.
 
 ## Manter atualizado
@@ -113,8 +131,9 @@ quando ela terminar.
 | `ChestCounter.Web/Storm.cs` | Posição do jogador e estado da tempestade em cada baú e tesouro. |
 | `ChestCounter.Web/Interop.cs` | Funções exportadas para o JavaScript (`[JSExport]`). |
 | `ChestCounter.Web/Shims.cs` | Substitutos mínimos das classes de desktop citadas pelos arquivos compartilhados. |
-| `ChestCounter.Web/wwwroot/engine.js`, `worker.js`, `runtime.js` | Carregam o runtime .NET (em um worker) e expõem `analyze(file)`. |
+| `ChestCounter.Web/wwwroot/engine.js`, `frame.js`, `runtime.js` | Carregam o runtime .NET num quadro oculto da página e expõem `analyze(file)`; se o runtime parar, o quadro é recriado e o replay é tentado de novo. (`worker.js`: versão em worker, só com `?worker=1`.) |
 | `ChestCounter.Web/wwwroot/app.js`, `stats.js`, `store.js` | Página, estatísticas e histórico. |
+| `ChestCounter.Web/wwwroot/treasure.js` | Prêmios, chances oficiais, Horas do Tesouro padrão e cálculo das chances. |
 | `ChestCounter.Web/wwwroot/zip.js`, `summary-image.js` | Leitura de `.zip` e imagem do resumo. |
 | `smoke-test.mjs`, `stamp-version.mjs` | Teste rápido e carimbo de versão do site publicado, usados pelo workflow. |
 | `sync-upstream.sh`, `patches/browser.patch`, `UPSTREAM` | Atualização do analisador a partir do projeto original. |

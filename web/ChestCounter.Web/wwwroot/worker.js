@@ -12,10 +12,10 @@ const ready = loadAnalyzer(
 ready.catch(() => { /* reported above */ });
 
 self.onmessage = async event => {
-    const { id, name, buffer } = event.data;
+    const { id, name, buffer, withStorm = true } = event.data;
     try {
         const api = await ready;
-        self.postMessage({ type: 'result', id, json: api.Analyze(new Uint8Array(buffer), name) });
+        self.postMessage({ type: 'result', id, json: api.Analyze(new Uint8Array(buffer), name, withStorm) });
     } catch (error) {
         self.postMessage({ type: 'result', id, error: String(error?.message ?? error) });
     }

@@ -19,6 +19,14 @@ export function emptyData() {
         settings: {
             profile: null, countAmmo: false, countFood: false, countCannons: false,
             showTeammates: false, countTeammates: false, includeOld: false, anonymousExport: false, initialChests: {},
+            countTeammateTreasures: false, // treasures found by teammates (rewards are shared with the team)
+            readStorm: true, // second read of each replay for the storm, map and route
+            range: null,
+            events: null,          // Treasure Hours edited by hand: [{ start, end, gold, shop, vehicle, status }] (ms), null = defaults
+            eventsRevision: 0,
+            claims: {},            // prizes already won: { 'profile|week start ms' or 'profile|season': ['gold', …] }
+            chanceTeam: false,
+            goal: { prize: 'gold', target: 0.5 }, // last chosen "from / to" window: { from, to } as local 'YYYY-MM-DDTHH:MM'
         },
     };
 }
@@ -74,6 +82,7 @@ export function cleanMatch(raw) {
         otherInteractions: counters(raw.otherInteractions),
         chests: list(raw.chests).map(c => ({ ...c, kind: text(c.kind) ?? 'Chest', timeSeconds: numberOrNull(c.timeSeconds), items: Array.isArray(c.items) ? c.items.map(String) : [] })),
         treasureFinds: list(raw.treasureFinds),
+        nearbyTreasureFinds: list(raw.nearbyTreasureFinds),
         teammates: list(raw.teammates).map(t => ({ ...t, name: text(t.name) ?? '', epicId: text(t.epicId), chestsSeen: count(t.chestsSeen), kinds: counters(t.kinds) })),
     };
 }
@@ -102,10 +111,18 @@ export function normalize(raw) {
 
     const settings = isObject(raw.settings) ? raw.settings : {};
     for (const name of Object.keys(data.settings)) {
-        if (typeof data.settings[name] === 'boolean') data.settings[name] = settings[name] === true;
+        if (typeof data.settings[name] === 'boolean') data.settings[name] = typeof settings[name] === 'boolean' ? settings[name] : data.settings[name];
     }
     data.settings.profile = text(settings.profile);
     data.settings.initialChests = counters(settings.initialChests);
+    data.settings.events = Array.isArray(settings.events) ? settings.events : null;
+    data.settings.eventsRevision = count(settings.eventsRevision);
+    data.settings.claims = Object.fromEntries(Object.entries(isObject(settings.claims) ? settings.claims : {})
+        .filter(([, v]) => Array.isArray(v)).map(([k, v]) => [k, v.filter(x => typeof x === 'string')]));
+    if (isObject(settings.goal)) data.settings.goal = { prize: text(settings.goal.prize) ?? 'gold', target: Number(settings.goal.target) || 0.5 };
+    const local = value => (typeof value === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(value) ? value : null);
+    data.settings.range = isObject(settings.range) && local(settings.range.from) && local(settings.range.to)
+        ? { from: settings.range.from, to: settings.range.to } : null;
     return data;
 }
 

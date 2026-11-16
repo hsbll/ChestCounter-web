@@ -39,12 +39,13 @@ public sealed class SettingsForm : Form
         Font = Theme.Text();
         BackColor = Theme.Bg;
         ForeColor = Theme.Ink;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
+        FormBorderStyle = FormBorderStyle.Sizable;
+        MaximizeBox = true;
         MinimizeBox = false;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(592, 548);
+        ClientSize = new Size(592, 644);
+        MinimumSize = SizeFromClientSize(ClientSize);
         Icon = AppIcon.Load();
 
         // Cabecera, como en la ventana principal.
@@ -55,9 +56,9 @@ public sealed class SettingsForm : Form
 
         // ---- Columna izquierda ---------------------------------------------------------------
 
-        // Opciones: dos interruptores.
-        var start = AddCard(LeftX, 40, LeftW, 170, 16);
-        CardTitle(start, L.T("Opciones", "Options"));
+        // Inicio: comportamiento de la aplicación.
+        var start = AddCard(LeftX, 40, LeftW, 106, 16);
+        CardTitle(start, L.T("Inicio", "Startup"));
         _fortnite = AddToggleRow(start, L.T("Abrir con Fortnite", "Open with Fortnite"),
             L.T("Cuenta tus partidas sin pensar en ello", "Counts your matches on its own"), 24, config.StartWithFortnite);
         _fortnite.CheckedChanged += (_, _) =>
@@ -78,8 +79,11 @@ public sealed class SettingsForm : Form
         };
         _report = AddToggleRow(start, L.T("Abrir el informe al iniciar", "Open the report at startup"), null, 64, config.OpenReportOnStart);
         _report.CheckedChanged += (_, _) => { if (!_loading) _monitor.Change(c => c.OpenReportOnStart = _report.Checked); };
-        var mates = AddToggleRow(start, L.T("Compañeros en el informe", "Teammates in the report"),
-            L.T("Sus cofres: hasta 1.087 m de ti", "Their chests: up to 1,087 m from you"), 94, config.ShowTeammates);
+        // Equipo: visibilidad y aportaciones al contador, juntas en una misma tarjeta.
+        var teamCard = AddCard(LeftX, 158, LeftW, 182, 16);
+        CardTitle(teamCard, L.T("Equipo y tesoros compartidos", "Team and shared treasures"));
+        var mates = AddToggleRow(teamCard, L.T("Mostrar compañeros", "Show teammates"),
+            L.T("En la ventana y en el informe", "In the window and report"), 28, config.ShowTeammates);
         mates.CheckedChanged += (_, _) =>
         {
             if (_loading)
@@ -97,7 +101,7 @@ public sealed class SettingsForm : Form
             }
             _monitor.SetShowTeammates(mates.Checked);
         };
-        var addMates = AddToggleRow(start, L.T("Sumar sus cofres a tu total", "Add their chests to your total"), null, 134, config.CountTeammateChests);
+        var addMates = AddToggleRow(teamCard, L.T("Sumar sus cofres a tu total", "Add their chests to your total"), null, 73, config.CountTeammateChests);
         addMates.CheckedChanged += (_, _) =>
         {
             if (_loading)
@@ -121,8 +125,14 @@ public sealed class SettingsForm : Form
             _monitor.SetCountTeammates(addMates.Checked);
         };
 
+        var addTreasures = AddToggleRow(teamCard, L.T("Sumar tesoros del equipo", "Include team treasures"), null, 107, config.CountTeammateTreasures);
+        addTreasures.CheckedChanged += (_, _) => { if (!_loading) _monitor.SetCountExtra(c => c.CountTeammateTreasures = addTreasures.Checked); };
+
+        Lbl(teamCard, L.T("Solo cuenta lo registrado en tu replay.\nEl aviso de token siempre está visible.", "Only counts events recorded in your replay.\nThe token status is always visible."),
+            7.5f, FontStyle.Regular, Theme.Muted, new Point(13, 144), new Size(LeftW - 26, 30));
+
         // Contar también como cofre: cajas de munición, de comida y cañones de botín (los cofres rotos cuentan siempre).
-        var extras = AddCard(LeftX, 219, LeftW, 116, 16);
+        var extras = AddCard(LeftX, 352, LeftW, 116, 16);
         CardTitle(extras, L.T("Contar también como cofre", "Also count as a chest"));
         var ammo = AddToggleRow(extras, L.T("Cajas de munición", "Ammo boxes"), null, 26, config.CountAmmoBoxes);
         ammo.CheckedChanged += (_, _) => { if (!_loading) _monitor.SetCountExtra(c => c.CountAmmoBoxes = ammo.Checked); };
@@ -147,7 +157,7 @@ public sealed class SettingsForm : Form
         SelectUpdateMode(mode < 0 ? 0 : mode, save: false);
 
         // Carpeta de replays y datos.
-        var folderCard = AddCard(LeftX, 344, LeftW, 94, 14);
+        var folderCard = AddCard(LeftX, 480, LeftW, 94, 14);
         CardTitle(folderCard, L.T("Carpeta de replays", "Replays folder"));
         _folder = AddField(folderCard, new Point(13, 26), LeftW - 26 - 72, config.DemosFolder);
         var browse = new PillButton { Text = L.T("Cambiar", "Change"), Location = new Point(LeftW - 13 - 66, 26), Size = new Size(66, 30), Radius = 10, Font = Theme.Text(8.5f, FontStyle.Bold) };
@@ -229,8 +239,8 @@ public sealed class SettingsForm : Form
         var reset = new PillButton
         {
             Text = L.T("Restablecer estadísticas…", "Reset statistics…"),
-            Location = new Point(LeftX, 447),
-            Size = new Size(LeftW, 32),
+            Location = new Point(RightX, 458),
+            Size = new Size(RightW, 32),
             Radius = 10,
             Font = Theme.Text(8.5f, FontStyle.Bold),
             ForeColor = Theme.Red,
@@ -242,7 +252,7 @@ public sealed class SettingsForm : Form
         var close = new PillButton
         {
             Text = L.T("Cerrar", "Close"),
-            Location = new Point(RightX, 439),
+            Location = new Point(RightX, 534),
             Size = new Size(RightW, 40),
             Radius = 12,
             BackColor = Theme.Accent,
@@ -253,7 +263,7 @@ public sealed class SettingsForm : Form
         Controls.Add(close);
 
         // Pie: web y redes del autor, como enlaces que abren el navegador.
-        var footer = AddCard(LeftX, 490, RightX + RightW - LeftX, 44, 12);
+        var footer = AddCard(LeftX, 586, RightX + RightW - LeftX, 44, 12);
         AddLinks(footer, L.T("Web y redes", "Web and social"), "dprojects.org", "https://dprojects.org/",
             new (string Tip, string Url, string Logo)[]
             {
@@ -266,7 +276,50 @@ public sealed class SettingsForm : Form
         FitTexts(this);
         AcceptButton = close;
         CancelButton = close;
+        CaptureResizeLayout();
         ActiveControl = close; // sin anillo de foco en el primer interruptor al abrir
+    }
+
+    private readonly List<(Control Control, Rectangle Bounds, Font Font)> _resizeLayout = new();
+    private readonly List<Font> _resizeFonts = new();
+    private void CaptureResizeLayout()
+    {
+        void Capture(Control parent)
+        {
+            foreach (Control child in parent.Controls)
+            {
+                _resizeLayout.Add((child, child.Bounds, child.Font));
+                Capture(child);
+            }
+        }
+        Capture(this);
+    }
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        if (_resizeLayout == null || _resizeLayout.Count == 0 || WindowState == FormWindowState.Minimized) return;
+        var fx = ClientSize.Width / 592f;
+        var fy = ClientSize.Height / 644f;
+        var k = Math.Min(fx, fy) / (DeviceDpi / 96f);
+        if (!float.IsFinite(k) || k <= 0) return;
+        SuspendLayout();
+        var oldFonts = _resizeFonts.ToArray();
+        _resizeFonts.Clear();
+        foreach (var (control, bounds, font) in _resizeLayout)
+        {
+            control.Bounds = new Rectangle((int)Math.Round(bounds.X * fx), (int)Math.Round(bounds.Y * fy),
+                (int)Math.Round(bounds.Width * fx), (int)Math.Round(bounds.Height * fy));
+            var scaled = new Font(font.FontFamily, font.SizeInPoints * k, font.Style);
+            control.Font = scaled;
+            _resizeFonts.Add(scaled);
+        }
+        ResumeLayout();
+        foreach (var font in oldFonts) font.Dispose();
+    }
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+        if (disposing) foreach (var font in _resizeFonts) font.Dispose();
     }
 
     /// <summary>
@@ -381,9 +434,9 @@ public sealed class SettingsForm : Form
 
     /// <summary>Lo que no: sus cofres, con la distancia medida en replays reales.</summary>
     private static InfoPoint ApproxPoint() => new("≈", Theme.Amber, L.T("Aproximado: sus cofres", "Approximate: their chests"),
-        L.Big("teammatesRange",
-            "Fortnite solo graba lo que pasa a menos de 1.087 m de ti. Si un compañero se aleja más, sus cofres no se cuentan: son un mínimo, no su total.",
-            "Fortnite only records what happens within 1,087 m of you. If a teammate goes further, their chests are not counted: they are a minimum, not their total."));
+        L.Big("teammatesRangeObserved",
+            "El replay solo incluye aperturas que Fortnite te envía. Las aperturas lejanas pueden faltar: el recuento es un mínimo, sin un radio garantizado.",
+            "The replay only includes openings Fortnite sends to you. Distant openings may be missing: the count is a minimum, with no guaranteed radius."));
 
     /// <summary>Vuelve a poner el interruptor como estaba (se canceló el diálogo), sin guardar nada.</summary>
     private void Revert(ToggleSwitch toggle)

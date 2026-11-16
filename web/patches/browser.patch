@@ -205,16 +205,77 @@ index 0000000..b031465
 +        b[i] = (byte)(v >> 24); b[i + 1] = (byte)(v >> 16); b[i + 2] = (byte)(v >> 8); b[i + 3] = (byte)v;
 +    }
 +}
+diff --git a/lib/OozSharp/Kraken.cs b/lib/OozSharp/Kraken.cs
+index 64b129d..1659b68 100644
+--- a/lib/OozSharp/Kraken.cs
++++ b/lib/OozSharp/Kraken.cs
+@@ -1,4 +1,4 @@
+-﻿/*
++/*
+ === Kraken Decompressor for Windows ===
+ Converted to C# for Fortnite by SL-x-TnT, original source code available at https://github.com/powzix/ooz.
+ 
+@@ -31,11 +31,18 @@ public unsafe class Kraken
+     /// <param name="compressedInput"></param>
+     /// <param name="uncompressedSize"></param>
+     /// <returns>Decompressed byte[]</returns>
++    /// <summary>
++    /// The decoder copies 8 and 16 bytes at a time and can write a few bytes past the end of the output, as the
++    /// original Ooz does (it asks callers for 64 spare bytes). Without them it overwrites whatever object follows
++    /// the buffer in memory: harmless most of the time on desktop .NET, a garbage-collector crash in the browser.
++    /// </summary>
++    private const int SafeSpace = 64;
++
+     public ReadOnlyMemory<byte> Decompress(ReadOnlySpan<byte> compressedInput, int uncompressedSize)
+     {
+         using var decoder = new KrakenDecoder();
+ 
+-        var decompressedBuffer = new byte[uncompressedSize];
++        var decompressedBuffer = new byte[uncompressedSize + SafeSpace];
+         var remainingBytes = uncompressedSize;
+         var sourceLength = compressedInput.Length;
+         var destinationOffset = 0;
+@@ -62,7 +69,7 @@ public unsafe class Kraken
+             }
+         }
+ 
+-        return decompressedBuffer;
++        return new ReadOnlyMemory<byte>(decompressedBuffer, 0, uncompressedSize);
+     }
+ 
+     private bool DecodeStep(KrakenDecoder decoder, byte* destination, int destinationOffset, int remainingDestinationBytes, byte* source, int sourceBytesleft, byte* scratch)
+@@ -89,7 +96,8 @@ public unsafe class Kraken
+             }
+ 
+             //throw new NotImplementedException($"memmove(dst_start + offset, src, dst_bytes_left);");
+-            Buffer.MemoryCopy(source, destination + destinationOffset, sourceBytesleft, sourceBytesleft);
++            // memmove(dst_start + offset, src, dst_bytes_left): only this block, not the rest of the input.
++            Buffer.MemoryCopy(source, destination + destinationOffset, destinationBytesLeft, destinationBytesLeft);
+ 
+             decoder.SourceUsed = (int)((source - sourceIn) + destinationBytesLeft);
+             decoder.DestinationUsed = destinationBytesLeft;
+@@ -142,8 +150,8 @@ public unsafe class Kraken
+             }
+             else
+             {
+-                var val = quantumHeader.Checksum;
+-                Buffer.MemoryCopy(&val, destination + destinationOffset, destinationBytesLeft, destinationBytesLeft);
++                // memset(dst_start + offset, qhdr.checksum, dst_bytes_left): the block is one repeated byte.
++                new Span<byte>(destination + destinationOffset, destinationBytesLeft).Fill((byte)quantumHeader.Checksum);
+             }
+ 
+             decoder.SourceUsed = (int)(source - sourceIn);
 diff --git a/lib/PATCHES.md b/lib/PATCHES.md
-index 691db44..5f07e3c 100644
+index 691db44..db66c14 100644
 --- a/lib/PATCHES.md
 +++ b/lib/PATCHES.md
-@@ -16,3 +16,5 @@ Changes for ChestCounter:
+@@ -16,3 +16,6 @@ Changes for ChestCounter:
  10. `Unreal.Core/ReplayReader.cs` + `BinaryReader.cs`: reading a replay **still being written**. `ReadReplayChunks` stops at the last complete chunk (`IsPartialReplay`, `BinaryReader.Length`), and an encrypted replay flagged "live" is accepted when its key is present.
  11. `Unreal.Core/ReplayReader.cs`: in a "live" replay, an event or data chunk that cannot be decrypted is skipped, or stops the reading, instead of failing the analysis. Note: during the match, Fortnite leaves the encryption key at zero in the header and only writes the real key at the end. The data of a match in progress therefore cannot be read (`ReplayHeaderProbe.KeyMissing`).
  12. `NoWarn` in the `.csproj` files of `Unreal.Core`, `OozSharp` and `FortniteReplayReader`: silences the upstream warnings (nullability in `KeyList`/`FortniteReplayBuilder`, obsolete `ChType`, unreachable code in `Kraken`).
 +13. `FortniteReplayReader/ManagedAes.cs` + `FortniteReplayReader.cs`: AES-ECB decryption in plain C#, used when running in the browser (the WebAssembly build of .NET has no AES-ECB). `ReplayReader.ForceManagedAes` forces it elsewhere, to test that path. The desktop build keeps using `System.Security.Cryptography.Aes`.
 +14. `Unreal.Core/NetFieldParser.cs`: `CreateSetter` falls back to plain reflection when the platform cannot emit dynamic code.
++15. `OozSharp/Kraken.cs`: the output buffer gets 64 spare bytes (the decoder's 8/16-byte copies can run a few bytes past the end, as in the original Ooz; without the spare bytes they overwrite the next object in memory, which crashes the garbage collector of the browser build), an uncompressed block copies only its own length, and a "memset" block is filled with its byte instead of copying from a 4-byte local.
 diff --git a/lib/Unreal.Core/NetFieldParser.cs b/lib/Unreal.Core/NetFieldParser.cs
 index b03e846..a70a2b5 100644
 --- a/lib/Unreal.Core/NetFieldParser.cs

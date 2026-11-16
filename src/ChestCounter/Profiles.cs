@@ -62,6 +62,13 @@ public static class Profiles
         return true;
     }
 
+    // Explicit standard BR playlists. Unknown modes fail closed; a chest alone proves nothing.
+    public static bool IsBattleRoyalePlaylist(string? playlist)
+    {
+        var name = (playlist ?? "").Split('/').Last().Split('.').Last();
+        return Regex.IsMatch(name, @"^Playlist_(?:Default(?:Solo|Duo|Trio|Squad)|Trios|Habanero(?:BR_|_NoBuildBR_)?(?:Solo|Duo|Trio|Squad)|NoBuildBR_(?:Solo|Duo|Trio|Squad)|(?:Ranked|RankedNoBuildBR|NoBuildBR_Ranked)_(?:Solo|Duo|Trio|Squad))$", RegexOptions.IgnoreCase);
+    }
+
     /// <summary>Stable key of a match's account: Epic id (survives a name change), else the display name.</summary>
     public static string Key(MatchRecord m) => !string.IsNullOrEmpty(m.EpicId) ? m.EpicId : m.PlayerName ?? "";
 
@@ -69,7 +76,7 @@ public static class Profiles
         .GroupBy(Key)
         .Select(g =>
         {
-            var validMatches = g.Where(m => c == null ? IsSupportedVersion(m) : Counted(m, c)).ToList();
+            var validMatches = g.Where(m => c == null ? IsSupportedVersion(m) && IsBattleRoyalePlaylist(m.Playlist) : Counted(m, c)).ToList();
             if (validMatches.Count == 0)
             {
                 return null;
@@ -115,10 +122,10 @@ public static class Profiles
 
     /// <summary>True when the match counts for statistics (version v43.X+ and respects the "count from" date setting).</summary>
     public static bool Counted(MatchRecord m, Config c) =>
-        IsSupportedVersion(m) && (c.CountFrom is not { } from || Day(m) >= from.Date);
+        IsBattleRoyalePlaylist(m.Playlist) && IsSupportedVersion(m) && (c.CountFrom is not { } from || Day(m) >= from.Date);
 
     /// <summary>A match as shown: its total also includes the non-chest kinds and, if chosen, the teammates' chests.</summary>
-    public static MatchRecord? Adjust(MatchRecord? m, Config c) => m?.WithExtras(c.ExtraKinds(), c.CountTeammateChests);
+    public static MatchRecord? Adjust(MatchRecord? m, Config c) => m?.WithExtras(c.ExtraKinds(), c.CountTeammateChests, c.CountTeammateTreasures);
 
     /// <summary>Estimated chests opened before the tool for a profile key ("" = before the first match).</summary>
     public static int InitialChests(Config c, string? key) =>

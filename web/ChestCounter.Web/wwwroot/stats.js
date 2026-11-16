@@ -79,16 +79,49 @@ export function periodStart(period, now = new Date()) {
 }
 
 /**
+ * The part of a match that falls between two instants (milliseconds). Each chest and treasure has its own time
+ * (match start + seconds into the replay), so a match cut by the window keeps exactly the ones inside it. What
+ * the replay only gives as a match total (ammo and food boxes, the teammates' chests) cannot be split: in a cut
+ * match it counts zero. Returns null when the match is entirely outside the window.
+ */
+export function clipMatch(m, from, to) {
+    const start = when(m).getTime();
+    if (start <= 0) return null;
+    const lastEvent = Math.max(0, ...(m.chests ?? []).map(c => c.timeSeconds ?? 0), ...(m.treasureFinds ?? []).map(f => f.obtainedAtSeconds ?? 0));
+    const end = start + 1000 * Math.max(m.durationSeconds ?? 0, lastEvent);
+    if (end < from || start >= to) return null;
+    if (start >= from && end < to) return m;
+    const inside = seconds => { const at = start + 1000 * (seconds ?? 0); return at >= from && at < to; };
+    const chests = (m.chests ?? []).filter(c => inside(c.timeSeconds));
+    const treasureFinds = (m.treasureFinds ?? []).filter(f => inside(f.obtainedAtSeconds));
+    return {
+        ...m,
+        chests,
+        treasureFinds,
+        chestsOpened: Math.max(0, (m.chestsOpened ?? 0) - ((m.chests ?? []).length - chests.length)),
+        otherInteractions: {},
+        ammoBoxesOpened: 0,
+        teammates: (m.teammates ?? []).map(t => ({ ...t, chestsSeen: 0, kinds: {} })),
+        clipped: true,
+        original: m,
+    };
+}
+
+/**
+ * filter = { period, size, range }: range = { from, to } in milliseconds, a window chosen by hand.
  * filter = { period, size }: only the matches of that period and team size are counted. The chests "from before
  * the counter" belong to no match, so they are only added when nothing is filtered out.
  */
 export function build(data, filter = {}, now = new Date()) {
     const settings = data.settings;
     const profile = currentProfile(data);
-    const start = periodStart(filter.period, now);
-    const filtered = !!start || !!filter.size;
+    const range = filter.period === 'custom' ? filter.range : null;
+    const start = range ? null : periodStart(filter.period, now);
+    const filtered = !!start || !!filter.size || !!range;
     const all = profile?.matches ?? []; // newest first
-    const matches = all.filter(m => (!start || when(m) >= start) && (!filter.size || teamSize(m.playlist) === filter.size));
+    const matches = all
+        .map(m => (range ? clipMatch(m, range.from, range.to) : m))
+        .filter(m => m && (!start || when(m) >= start) && (!filter.size || teamSize(m.playlist) === filter.size));
     const rows = matches.map(m => ({ m, date: when(m), ...counts(m, settings) }));
 
     const perDay = new Map();
@@ -111,11 +144,13 @@ export function build(data, filter = {}, now = new Date()) {
     const byKind = new Map();
     const others = new Map();
     const treasures = [];
+    const tokens = []; // matches where a Pirate Shop token was seen (yours or your team's)
     const mates = new Map();
     for (const { m, date, own, mates: teamSeen } of rows) {
         for (const chest of m.chests ?? []) byKind.set(chest.kind, (byKind.get(chest.kind) ?? 0) + 1);
         for (const [kind, n] of Object.entries(m.otherInteractions ?? {})) others.set(kind, (others.get(kind) ?? 0) + n);
-        for (const find of m.treasureFinds ?? []) treasures.push({ find, m, date });
+        for (const find of treasuresOf(m, settings)) treasures.push({ find, m, date });
+        if ((m.treasureFinds ?? []).concat(m.nearbyTreasureFinds ?? []).some(f => f.isPirateToken)) tokens.push({ m, date });
         for (const mate of m.teammates ?? []) {
             const key = mate.epicId || mate.name;
             const entry = mates.get(key) ?? { name: mate.name, matches: 0, wins: 0, seen: 0, best: 0, team: 0 };
@@ -179,6 +214,7 @@ export function build(data, filter = {}, now = new Date()) {
     return {
         profile,
         filtered,
+        clipped: matches.filter(m => m.clipped).length,
         available: all.length,
         sizes: [...new Set(all.map(m => teamSize(m.playlist)).filter(Boolean))],
         rows,
@@ -206,6 +242,7 @@ export function build(data, filter = {}, now = new Date()) {
         byKind: [...byKind.entries()].sort((a, b) => b[1] - a[1]),
         others: [...others.entries()].sort((a, b) => b[1] - a[1]),
         treasures,
+        tokens,
         mates: [...mates.values()].sort((a, b) => b.seen - a.seen),
     };
 }
@@ -227,4 +264,10 @@ export function stormOf(match) {
         else if (chest.storm?.inStorm === false) out++;
     }
     return inside + out > 0 ? { in: inside, out, known: inside + out } : null;
+}
+
+/** Treasures of a match as counted: yours, plus the team's when chosen (rewards are shared with the squad). */
+export function treasuresOf(match, settings) {
+    const own = match.treasureFinds ?? [];
+    return settings.countTeammateTreasures ? own.concat((match.nearbyTreasureFinds ?? []).filter(f => f.scope === 'team')) : own;
 }

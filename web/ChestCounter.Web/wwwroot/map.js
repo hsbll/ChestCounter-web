@@ -4,12 +4,30 @@
 
 const SURFACE = '#071020', GRID = 'rgba(47, 95, 147, .35)', INK = '#dff8ff';
 
+/** The classic "hot" ramp of a heat map, from few (dark blue, faint) to many (pale yellow): [position, r, g, b, alpha]. */
+const HEAT_STOPS = [[0, 20, 30, 150, 0], [0.12, 50, 40, 190, 0.55], [0.35, 150, 30, 170, 0.8], [0.58, 225, 50, 90, 0.9], [0.8, 250, 140, 40, 0.95], [1, 255, 240, 130, 1]];
+/** The same ramp as a CSS gradient, for the legend. */
+export const HEAT_CSS = `linear-gradient(90deg, ${HEAT_STOPS.slice(1).map(([p, r, g, b]) => `rgb(${r}, ${g}, ${b}) ${Math.round(((p - 0.12) / 0.88) * 100)}%`).join(', ')})`;
+const HEAT_LUT = (() => {
+    const lut = new Uint8ClampedArray(256 * 4);
+    for (let i = 0; i < 256; i++) {
+        const t = i / 255;
+        let k = 1;
+        while (k < HEAT_STOPS.length - 1 && HEAT_STOPS[k][0] < t) k++;
+        const a = HEAT_STOPS[k - 1], b = HEAT_STOPS[k], f = (t - a[0]) / (b[0] - a[0] || 1);
+        for (let c = 0; c < 3; c++) lut[i * 4 + c] = a[c + 1] + (b[c + 1] - a[c + 1]) * f;
+        lut[i * 4 + 3] = 255 * (a[4] + (b[4] - a[4]) * f);
+    }
+    return lut;
+})();
+
 /**
  * createMap(host, { onPick }) -> { update(scene), reset() }
  * scene = {
  *   markers: [{ x, y, color, shape: 'square' | 'hollow' | 'diamond', label?, data? }],
- *   heat:    { points: [[x, y], …], color: [r, g, b] }   // cells coloured by how many points fall in them
- *   line:    [[x, y], …]                                 // drawn under the markers; null breaks the line
+ *   heat:    { points: [[x, y], …] }                     // smooth heat: the more points nearby, the hotter
+ *   line:    [[x, y], …]                                 // dashed, under the markers; null breaks the line
+ *   lines:   [[[x, y], …], …]                            // many faint lines: where they overlap they get brighter
  * }
  */
 export function createMap(host, { onPick } = {}) {
@@ -29,7 +47,8 @@ export function createMap(host, { onPick } = {}) {
     host.replaceChildren(canvas, buttons);
     const ctx = canvas.getContext('2d');
 
-    let scene = { markers: [], heat: null, line: null };
+    let scene = { markers: [], heat: null, line: null, lines: null };
+    const shade = document.createElement('canvas'); // heat is painted here first, in grey, then coloured
     let bounds = null;      // { cx, cy, span } of everything in the scene
     let view = null;        // { cx, cy, zoom }: zoom 1 shows the whole scene
     let fitted = '';        // the bounds the current view was made for
@@ -47,6 +66,7 @@ export function createMap(host, { onPick } = {}) {
         for (const m of scene.markers) add(m.x, m.y);
         for (const p of scene.heat?.points ?? []) add(p[0], p[1]);
         for (const p of scene.line ?? []) if (p) add(p[0], p[1]);
+        for (const line of scene.lines ?? []) for (const p of line) if (p) add(p[0], p[1]);
         if (xs.length === 0) return null;
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
         for (let i = 0; i < xs.length; i++) {
@@ -90,7 +110,7 @@ export function createMap(host, { onPick } = {}) {
         ctx.stroke();
 
         if (scene.heat?.points.length) {
-            // Cells are fixed in the world (1/40 of the scene), so zooming does not reshuffle them.
+            // How many points fall in each world cell (1/40 of the scene): gives the scale of the legend.
             const cell = bounds.span / 40;
             const counts = new Map();
             let max = 0;
@@ -100,15 +120,55 @@ export function createMap(host, { onPick } = {}) {
                 counts.set(key, n);
                 if (n > max) max = n;
             }
-            const [r, g, b] = scene.heat.color;
-            const side = Math.max(2, cell * k - 1);
-            for (const [key, n] of counts) {
-                const [ix, iy] = key.split(',').map(Number);
-                const [sx, sy] = toScreen((ix + 1) * cell, iy * cell);
-                ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${(0.3 + 0.7 * n / max).toFixed(3)})`;
-                ctx.fillRect(sx, sy, side, side);
+            // Each point adds a soft blob to a half-size grey canvas; the grey level is then turned into colour.
+            const sw = Math.max(1, Math.round(w / 2)), sh = Math.max(1, Math.round(h / 2));
+            shade.width = sw;
+            shade.height = sh;
+            const g = shade.getContext('2d', { willReadFrequently: true });
+            const radius = Math.max(7, (cell * k * 1.3) / 2);
+            const weight = Math.min(1, 1.6 / max);
+            for (const [x, y] of scene.heat.points) {
+                const [sx, sy] = toScreen(x, y);
+                if (sx < -2 * radius * 2 || sy < -radius * 4 || sx > w + radius * 4 || sy > h + radius * 4) continue;
+                const blob = g.createRadialGradient(sx / 2, sy / 2, 0, sx / 2, sy / 2, radius);
+                blob.addColorStop(0, `rgba(0, 0, 0, ${weight})`);
+                blob.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                g.fillStyle = blob;
+                g.fillRect(sx / 2 - radius, sy / 2 - radius, 2 * radius, 2 * radius);
             }
+            const image = g.getImageData(0, 0, sw, sh);
+            const px = image.data;
+            for (let p = 0; p < px.length; p += 4) {
+                const level = px[p + 3];
+                if (level === 0) continue;
+                const index = Math.min(255, Math.round(Math.sqrt(level / 255) * 255)) * 4; // square root: single chests stay visible
+                px[p] = HEAT_LUT[index]; px[p + 1] = HEAT_LUT[index + 1]; px[p + 2] = HEAT_LUT[index + 2]; px[p + 3] = HEAT_LUT[index + 3];
+            }
+            g.putImageData(image, 0, 0);
+            ctx.imageSmoothingEnabled = true;
+            ctx.drawImage(shade, 0, 0, w, h);
             heatInfo = { max, cell, cells: counts.size };
+        }
+
+        if (scene.lines?.length) {
+            // Every match's route as a faint line; "lighter" makes the stretches walked many times stand out.
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.strokeStyle = `rgba(255, 190, 60, ${Math.max(0.16, Math.min(0.7, 1.6 / scene.lines.length)).toFixed(2)})`;
+            ctx.lineWidth = 2.5;
+            ctx.lineJoin = ctx.lineCap = 'round';
+            for (const line of scene.lines) {
+                ctx.beginPath();
+                let pen = false;
+                for (const p of line) {
+                    if (!p) { pen = false; continue; }
+                    const [sx, sy] = toScreen(p[0], p[1]);
+                    if (pen) ctx.lineTo(sx, sy); else ctx.moveTo(sx, sy);
+                    pen = true;
+                }
+                ctx.stroke();
+            }
+            ctx.restore();
         }
 
         if (scene.line?.length) {
@@ -254,7 +314,7 @@ export function createMap(host, { onPick } = {}) {
     return {
         /** Draws a new scene. The zoom is kept while the scene covers the same area; it is refitted otherwise. */
         update(next) {
-            scene = { markers: next.markers ?? [], heat: next.heat ?? null, line: next.line ?? null };
+            scene = { markers: next.markers ?? [], heat: next.heat ?? null, line: next.line ?? null, lines: next.lines ?? null };
             bounds = measure();
             const key = bounds ? `${Math.round(bounds.cx / 5000)},${Math.round(bounds.cy / 5000)},${Math.round(bounds.span / 5000)}` : '';
             if (bounds && (key !== fitted || !view)) view = { cx: bounds.cx, cy: bounds.cy, zoom: 1 };

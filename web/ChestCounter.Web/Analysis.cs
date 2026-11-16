@@ -11,6 +11,8 @@ public sealed class AnalysisResult
     public string? Message { get; set; }
     /// <summary>False for a Fortnite version the desktop tool does not count either (before v43).</summary>
     public bool SupportedVersion { get; set; }
+    /// <summary>False for a playlist the desktop tool leaves out of the count (not a standard Battle Royale mode).</summary>
+    public bool CountedPlaylist { get; set; } = true;
     public MatchRecord? Match { get; set; }
     /// <summary>Positions and storm state for the chests and treasures of <see cref="Match"/> (web-only analysis).</summary>
     public StormInfo? Storm { get; set; }
@@ -28,10 +30,11 @@ public static class WebAnalyzer
     private const uint FileMagic = 0x1CA2E27F;
 
     /// <summary>Analyzes one .replay file held in memory and returns an <see cref="AnalysisResult"/> as JSON.</summary>
-    public static string AnalyzeToJson(byte[] data, string fileName) =>
-        JsonSerializer.Serialize(Analyze(data, fileName), WebJson.Default.AnalysisResult);
+    /// <param name="withStorm">Also read the replay a second time for positions and storm (about 2.5 times slower overall).</param>
+    public static string AnalyzeToJson(byte[] data, string fileName, bool withStorm = true) =>
+        JsonSerializer.Serialize(Analyze(data, fileName, withStorm), WebJson.Default.AnalysisResult);
 
-    public static AnalysisResult Analyze(byte[] data, string fileName)
+    public static AnalysisResult Analyze(byte[] data, string fileName, bool withStorm = true)
     {
         switch (ProbeHeader(data))
         {
@@ -47,8 +50,12 @@ public static class WebAnalyzer
             // Same call as the desktop tool: the player who recorded the replay is the one counted.
             var match = new ReplayAnalyzer().Analyze(stream, fileName, "");
             match.ReplayFile = fileName;
-            var result = new AnalysisResult { Status = "ok", Match = match, SupportedVersion = Profiles.IsSupportedVersion(match) };
-            if (match.IsBattleRoyale && match.Chests.Count + match.TreasureFinds.Count > 0)
+            var result = new AnalysisResult { Status = "ok", Match = match, SupportedVersion = Profiles.IsSupportedVersion(match), CountedPlaylist = Profiles.IsBattleRoyalePlaylist(match.Playlist) };
+            if (!withStorm)
+            {
+                result.StormVersion = 0; // read without it: the page knows this match can still be completed
+            }
+            else if (match.IsBattleRoyale && match.Chests.Count + match.TreasureFinds.Count > 0)
             {
                 try
                 {

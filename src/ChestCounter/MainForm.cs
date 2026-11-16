@@ -32,7 +32,9 @@ public sealed class MainForm : Form
     private readonly PillButton _overlayButton, _reportButton, _settingsButton;
     private readonly DailyChart _daily;
     private readonly Label _lastValue, _lastDetail;
-    private readonly Card _teamCard;
+    private readonly Card _teamCard, _pirateCard;
+    private readonly Label _pirateLabel;
+    private bool _teamShown, _pirateShown;
     private readonly Label _teamTitle, _teamTotal, _teamMessage;
     private readonly Label[] _teamNames = new Label[TeamColumns], _teamValues = new Label[TeamColumns];
     private const int TeamColumns = 4; // tú + hasta 3 compañeros (escuadrón)
@@ -111,6 +113,19 @@ public sealed class MainForm : Form
         _daily = new DailyChart { Location = new Point(9, 24), Size = new Size(246, 90), BackColor = Theme.Card };
         daily.Controls.Add(_daily);
         Controls.Add(daily);
+
+        _pirateCard = new Card { Location = new Point(LeftX, 334), Size = new Size(RightX + RightW - LeftX, 42), Radius = 14, BackColor = Theme.Panel, Visible = false };
+        _pirateLabel = new Label
+        {
+            Bounds = new Rectangle(13, 0, _pirateCard.Width - 26, 42), Font = Theme.Text(8.5f, FontStyle.Bold),
+            ForeColor = Theme.Amber, BackColor = _pirateCard.BackColor, TextAlign = ContentAlignment.MiddleCenter,
+            AutoEllipsis = true,
+        };
+        _pirateCard.Controls.Add(_pirateLabel);
+        _pirateCard.Cursor = _pirateLabel.Cursor = Cursors.Hand;
+        _pirateCard.Click += (_, _) => Open(new Uri(_store.ReportPath).AbsoluteUri + "#tesoros");
+        _pirateLabel.Click += (_, _) => Open(new Uri(_store.ReportPath).AbsoluteUri + "#tesoros");
+        Controls.Add(_pirateCard);
 
         // Equipo (con «Compañeros» activado): tus cofres y los vistos de cada compañero en la partida actual o la última.
         // Solo se ve con la opción activada; entonces la ventana crece para hacerle sitio.
@@ -318,7 +333,11 @@ public sealed class MainForm : Form
             if (lm.Treasures > 0) parts.Add(L.Count(lm.Treasures, "tesoro", "tesoros", "treasure", "treasures"));
             if (lm.Placement is { } place) parts.Add(lm.Players is { } players ? $"{L.Ordinal(place)} {L.T("de", "of")} {players}" : L.Ordinal(place));
             if (lm.Eliminations is { } elim) parts.Add(L.F("{0} elim.", "{0} elim.", elim));
-            _lastDetail.Text = string.Join("  ·  ", parts);
+            _lastDetail.Text = lm.PirateToken
+                ? L.T("★ Token pirata", "★ Pirate token")
+                : string.Join("  ·  ", parts);
+            _lastDetail.ForeColor = lm.PirateToken ? Theme.Amber : Theme.Muted;
+            _lastValue.ForeColor = Theme.Amber;
         }
         else
         {
@@ -326,6 +345,14 @@ public sealed class MainForm : Form
             _lastDetail.Text = "";
         }
         _daily.SetDays(st.LastDays);
+        var pirateAlert = s.PirateTokenLive || st.LastMatch?.PirateToken == true;
+        _pirateLabel.Text = pirateAlert
+            ? (s.PirateTokenLive ? L.T("★ TOKEN PIRATA · Detectado en esta partida", "★ PIRATE TOKEN · Detected in this match")
+                : L.T("★ TOKEN PIRATA · Detectado en la partida anterior", "★ PIRATE TOKEN · Detected in the previous match"))
+                + "\n" + (s.TokenDetails ?? L.T("Ver detalles en Tesoros →", "View details in Treasures →"))
+            : L.T("TOKEN DE TIENDA PIRATA · Sin detecciones\nTu replay y equipo · Ver Tesoros →", "PIRATE SHOP TOKEN · No detections\nYour replay and team · View Treasures →");
+        _pirateLabel.ForeColor = pirateAlert ? Theme.Amber : Theme.Muted;
+        SetBottomPanels(s.Team != null, true);
         RenderTeam(s.Team);
 
         // Perfil: nombre fijo con una sola cuenta, selector con varias.
@@ -381,7 +408,6 @@ public sealed class MainForm : Form
     /// </summary>
     private void RenderTeam(TeamSummary? team)
     {
-        SetTeamVisible(team != null);
         if (team == null)
         {
             return;
@@ -410,20 +436,19 @@ public sealed class MainForm : Form
     }
 
     /// <summary>Muestra u oculta la tarjeta «Equipo»; la ventana crece o encoge con ella, a la misma escala.</summary>
-    private void SetTeamVisible(bool on)
+    private void SetBottomPanels(bool team, bool pirate)
     {
-        if (_teamCard.Visible == on)
-        {
-            return;
-        }
+        if (_teamShown == team && _pirateShown == pirate) return;
         var scale = ClientSize.Height / (float)_designH;
-        _teamCard.Visible = on;
-        _designH = on ? DesignHTeam : DesignHBase;
-        _lastFx = _lastFy = -1; // vuelve a colocar todo con la nueva altura de diseño
+        _teamShown = team;
+        _pirateShown = pirate;
+        _teamCard.Visible = team;
+        _pirateCard.Visible = pirate;
+        _layout[_teamCard].Location = new Point(LeftX, pirate ? 384 : 334);
+        _designH = DesignHBase + (team ? DesignHTeam - DesignHBase : 0) + (pirate ? 50 : 0);
+        _lastFx = _lastFy = -1;
         if (WindowState == FormWindowState.Normal)
-        {
             ClientSize = new Size(ClientSize.Width, (int)Math.Round(_designH * scale));
-        }
         ApplyLayoutScale();
     }
 

@@ -101,7 +101,7 @@ public static class ReportWriter
             var view = Profiles.View(data, config);
             WriteAtomic(store.ReportPath, Report(config, view, Profiles.List(data, config),Profiles.InitialChests(data, config)));
             WriteAtomic(store.OverlayPath, Overlay(OverlayModel.Build(view, null, false, Profiles.InitialChests(data, config))));
-            WriteAtomic(store.CsvPath, Csv(data));
+            WriteAtomic(store.CsvPath, Csv(view));
         }
         catch (Exception ex)
         {
@@ -390,7 +390,7 @@ public static class ReportWriter
 
         // ---- Datos que comparten varias pestañas -----------------------------------------------------
         var extraKinds = config.ExtraKinds();
-        var treasureRows = matches.SelectMany(m => m.TreasureFinds.Select(f => (m, f))).ToList();
+        var treasureRows = matches.SelectMany(m => m.AllTreasureFinds.Select(f => (m, f))).ToList();
         (string Html, int Count)? mates = config.ShowTeammates ? TeammatesPanel(matches, extraKinds, N) : null;
         var top10 = matches.Count(m => m.Placement is > 1 and <= 10);
         var bestDay = matches.GroupBy(m => When(m).Date).Select(g => (Day: g.Key, Chests: g.Sum(m => m.ChestsOpened)))
@@ -560,8 +560,18 @@ public static class ReportWriter
 
         // ================================ Tesoros ================================
         sb.Append("""<div class="panel" id="t-tesoros" role="tabpanel" aria-labelledby="tab-tesoros">""");
+        var observedTokens = treasureRows.Count(r => r.f.IsPirateToken);
+        sb.Append($"<div class='callout'><span class='ic'>★</span><div><b>{L.T("Token de Tienda Pirata", "Pirate Shop Token")}: {(observedTokens > 0 ? N(observedTokens) + " · " + L.T("detectado", "detected") : L.T("sin detecciones", "no detections"))}</b><br>{L.T("Se revisan premios propios, del equipo y de otros jugadores presentes en tu replay. Los premios desconocidos no permiten descartar un token; los eventos de compañeros alejados pueden faltar.", "Checks your rewards, team rewards and other players recorded in your replay. Unknown rewards cannot rule out a token; distant teammates' events may be missing.")}</div></div>");
         if (treasureRows.Count > 0)
         {
+            var ownCount = treasureRows.Count(r => r.f.Scope == "own");
+            var teamCount = treasureRows.Count(r => r.f.Scope == "team");
+            var nearbyCount = treasureRows.Count(r => r.f.Scope == "nearby");
+            var unknownCount = treasureRows.Count(r => r.f.Scope == "unknown");
+            sb.Append($"<div class='minis'><div class='mini-kpi'><b>{N(ownCount)}</b><span>{L.T("Propios", "Own")}</span></div><div class='mini-kpi'><b>{N(teamCount)}</b><span>{L.T("Del equipo", "Team")}</span></div><div class='mini-kpi'><b>{N(nearbyCount)}</b><span>{L.T("Otros jugadores observados", "Other observed players")}</span></div><div class='mini-kpi'><b>{N(unknownCount)}</b><span>{L.T("Sin atribuir", "Unattributed")}</span></div></div>");
+            if (treasureRows.Any(r => r.f.IsPirateToken))
+                sb.Append($"<div class='flag'><b>★ {L.T("Alguien obtuvo el token de acceso pirata en una de tus partidas", "Someone obtained Pirate Shop access in one of your matches")} ★</b></div>");
+            sb.Append($"<p class='sm'>{L.T("Cobertura limitada a los eventos del replay. Las fuentes por coincidencia temporal son probables; no demuestran por sí solas qué contenedor dio el premio.", "Coverage is limited to replay events. Sources matched by time are probable; they do not prove which container awarded the prize.")}</p>");
             var unusual = treasureRows.Where(r => !r.f.SourceIsChest).ToList();
             if (unusual.Count > 0)
             {
@@ -580,6 +590,11 @@ public static class ReportWriter
                   <div class="mini-kpi"><b>{(matches.Count > 0 ? (100.0 * treasureMatches / matches.Count).ToString("0", Loc) : "0")} %</b><span>{L.T("de partidas con tesoro", "of matches with a treasure")}</span></div>
                 </div>
                 """);
+
+            sb.Append($"<section><div class='sh'><h2>{L.T("Tesoros por premio", "Treasures by reward")}</h2></div><div class='card tw'><table><thead><tr><th>{L.T("Premio", "Reward")}</th><th>{L.T("Propios", "Own")}</th><th>{L.T("Equipo", "Team")}</th><th>{L.T("Otros observados", "Other observed")}</th><th>{L.T("Sin atribuir", "Unattributed")}</th></tr></thead><tbody>");
+            foreach (var reward in treasureRows.GroupBy(r => r.f.DisplayName).OrderByDescending(g => g.Count()))
+                sb.Append($"<tr><td>{H(reward.Key)}</td><td>{N(reward.Count(r => r.f.Scope == "own"))}</td><td>{N(reward.Count(r => r.f.Scope == "team"))}</td><td>{N(reward.Count(r => r.f.Scope == "nearby"))}</td><td>{N(reward.Count(r => r.f.Scope == "unknown"))}</td></tr>");
+            sb.Append("</tbody></table></div></section>");
 
             var bySource = treasureRows.GroupBy(r => r.f.SourceLabel).OrderByDescending(g => g.Count()).ToList();
             var srcMax = Math.Max(1, bySource.Max(g => g.Count()));
@@ -600,6 +615,7 @@ public static class ReportWriter
                 var id = f.PrizeId != null ? $"<div class=\"sm\">{H(f.PrizeId)}</div>" : (f.RawItem.StartsWith("WID_") ? $"<div class=\"sm\">{H(f.RawItem)}</div>" : "");
                 var when = f.ObtainedAtSeconds is float t ? (f.TimeExact ? Pretty.Clock(t) : $"<span class=\"sm\">{L.T("hacia", "around")}</span> {Pretty.Clock(t)}") : "<span class=\"muted\">—</span>";
                 var source = $"{(f.SourceIsChest ? "" : "⚑ ")}{H(f.SourceLabel)}"
+                    + $"<div class=\"sm\">{H(f.Scope == "own" ? L.T("Propio", "Own") : f.Scope == "team" ? L.T("Equipo", "Team") : f.Scope == "nearby" ? L.T("Jugador observado", "Observed player") : L.T("Sin atribuir", "Unattributed"))} · {H(f.Finder ?? "?")}</div>"
                     + (f.SourceCertain ? "" : $" <span class=\"sm\">({Pretty.Likely})</span>")
                     + (!f.SourceIsChest && !string.IsNullOrEmpty(f.SourceBlueprint) ? $"<div class=\"sm\">{H(f.SourceBlueprint)}</div>" : "")
                     + (f.AlsoPossible.Count > 0 ? $"<div class=\"sm\">{L.T("también posible: ", "also possible: ")}{H(string.Join(", ", f.AlsoPossible.Select(L.Name)))}</div>" : "");
@@ -722,9 +738,9 @@ public static class ReportWriter
         string Initial(string name) => H(name.Trim().Length > 0 ? char.ToUpperInvariant(name.Trim()[0]).ToString() : "?");
         string Pct(int part, int whole) => whole > 0 ? (100.0 * part / whole).ToString("0", Loc) + " %" : "—";
         sb.Append($"""
-            <div class="callout"><span class="ic">i</span><div>{L.Big("teammatesNote",
-                "Los cofres de tus compañeros no son exactos: salen de tu replay, y Fortnite solo graba lo que pasa a menos de 1.087 m de ti. Si un compañero se aleja más, sus cofres no se cuentan. Son un mínimo, no su total. «Tus cofres» son los tuyos en esas mismas partidas, para comparar.",
-                "Your teammates' chests are not exact: they come from your replay, and Fortnite only records what happens within 1,087 m of you. If a teammate goes further, their chests are not counted. They are a minimum, not their total. \"Your chests\" are yours in those same matches, for comparison.")}</div></div>
+            <div class="callout"><span class="ic">i</span><div>{L.Big("teammatesNoteObserved",
+                "Los cofres de tus compañeros son un mínimo de aperturas registradas en tu replay. No hay un radio garantizado; las aperturas lejanas pueden faltar. «Tus cofres» son los tuyos en esas mismas partidas, para comparar.",
+                "Your teammates' chests are a minimum of openings recorded in your replay. There is no guaranteed radius; distant openings may be missing. \"Your chests\" are yours in those same matches, for comparison.")}</div></div>
             """);
         if (all.Count == 0)
         {
@@ -1000,7 +1016,7 @@ public static class ReportWriter
         sb.AppendLine(L.T("fecha;modo;jugador;puesto;jugadores;cofres;cajas_municion;tesoros;archivo",
             "date;mode;player;placement;players;chests;ammo_boxes;treasures;file"));
 
-        foreach (var m in data.Matches.Where(Profiles.IsSupportedVersion).OrderBy(When))
+        foreach (var m in data.Matches.Where(m => Profiles.IsSupportedVersion(m) && Profiles.IsBattleRoyalePlaylist(m.Playlist)).OrderBy(When))
         {
             var t = string.Join(" + ", m.TreasureFinds.Select(f => f.DisplayName));
             sb.AppendLine(string.Join(";",

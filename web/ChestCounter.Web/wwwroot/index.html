@@ -36,6 +36,10 @@
         <button type="button" class="primary" id="pickFiles">Escolher arquivos ou zip</button>
         <button type="button" id="pickFolder">Escolher pasta</button>
       </div>
+      <div class="buttons" id="upgradeBox" hidden>
+        <button type="button" id="upgrade">Completar partidas antigas…</button>
+      </div>
+      <p class="muted" id="upgradeText" hidden></p>
       <input type="file" id="fileInput" accept=".replay,.zip,application/zip" multiple hidden>
       <input type="file" id="folderInput" webkitdirectory multiple hidden>
     </div>
@@ -49,6 +53,7 @@
     </div>
     <p class="status" id="engineStatus" role="status">Carregando o analisador… os botões são liberados quando terminar.</p>
     <div class="progress" id="progress" hidden><div id="progressBar"></div></div>
+    <div class="buttons stopRow"><button type="button" class="danger" id="stopImport" hidden>Parar a leitura</button></div>
     <ul class="log" id="log" aria-live="polite"></ul>
   </section>
 
@@ -71,16 +76,23 @@
           <option value="30">Últimos 30 dias</option>
           <option value="month">Este mês</option>
           <option value="year">Este ano</option>
+          <option value="custom">Escolher datas e horas…</option>
         </select>
       </label>
+      <span class="range" id="rangeBox" hidden>
+        <label>De <input type="datetime-local" id="rangeFrom" step="60"></label>
+        <label>Até <input type="datetime-local" id="rangeTo" step="60"></label>
+      </span>
       <label>Modo
         <select id="size"></select>
       </label>
       <span class="muted" id="filterNote"></span>
     </div>
+    <p class="muted rangeNote" id="rangeNote" hidden></p>
 
     <div class="tabs" role="tablist" aria-label="Seções do relatório">
       <button type="button" role="tab" id="tab-resumo" data-tab-button="resumo">Resumo</button>
+      <button type="button" role="tab" id="tab-tesouro" data-tab-button="tesouro">Hora do Tesouro</button>
       <button type="button" role="tab" id="tab-tempestade" data-tab-button="tempestade">Tempestade</button>
       <button type="button" role="tab" id="tab-mapa" data-tab-button="mapa">Mapa</button>
       <button type="button" role="tab" id="tab-graficos" data-tab-button="graficos">Gráficos</button>
@@ -142,6 +154,56 @@
       </section>
     </div>
 
+    <div data-tab="tesouro">
+      <section class="card">
+        <h2>Próxima Hora do Tesouro</h2>
+        <div class="countdown" id="nextEvent"></div>
+        <p id="nextEventText"></p>
+      </section>
+      <section class="card">
+        <h2>Semana de prêmios</h2>
+        <div class="countdown small" id="weekReset"></div>
+        <p id="weekText"></p>
+        <div id="weekBars"></div>
+      </section>
+      <section class="card">
+        <h2>Semanas da temporada</h2>
+        <p id="weekHistoryText"></p>
+        <div class="legend"><span class="key safe"></span> Fora da Hora do Tesouro <span class="key gold"></span> Na Hora do Tesouro</div>
+        <div id="weekHistory" class="valueBars"></div>
+      </section>
+      <section class="card">
+        <h2>Suas chances</h2>
+        <p id="chanceText"></p>
+        <label class="inlineCheck"><input type="checkbox" id="chanceTeam"> Incluir os baús vistos dos companheiros <span class="muted">(os prêmios valem para o time)</span></label>
+        <div class="scroll"><table id="chances"></table></div>
+        <p class="muted">Chance de ter tirado o prêmio pelo menos uma vez, somando cada baú com a chance do momento em que foi aberto (maior dentro de uma Hora do Tesouro). É probabilidade, não promessa, e não diz nada sobre o próximo baú. Os prêmios da semana contam só os baús desde a troca semanal; o token conta a temporada toda. Marque "Já tenho" para o que você já ganhou: a Epic tira esse prêmio do seu sorteio.</p>
+      </section>
+      <section class="card">
+        <h2>Meta</h2>
+        <div class="goalControls">
+          <label>Prêmio <select id="goalPrize"></select></label>
+          <label>Chance desejada
+            <select id="goalTarget">
+              <option value="0.1">10%</option><option value="0.25">25%</option><option value="0.5">50%</option><option value="0.75">75%</option><option value="0.9">90%</option>
+            </select>
+          </label>
+        </div>
+        <p id="goalText"></p>
+        <div id="goalBars"></div>
+      </section>
+      <section class="card">
+        <h2>Horas do Tesouro</h2>
+        <p class="muted" id="eventsNote"></p>
+        <div class="scroll"><table id="events"></table></div>
+        <div class="buttons pager">
+          <button type="button" id="eventsEdit">Editar horários</button>
+          <button type="button" id="eventsAdd" hidden>Adicionar hora</button>
+          <button type="button" class="danger" id="eventsReset" hidden>Voltar à lista padrão</button>
+        </div>
+      </section>
+    </div>
+
     <div data-tab="mapa">
       <section class="card">
         <h2>Mapa</h2>
@@ -150,7 +212,7 @@
             <select id="mapMode">
               <option value="points">Baús (pontos)</option>
               <option value="heat">Calor dos baús</option>
-              <option value="route">Calor da rota</option>
+              <option value="route">Rotas (linhas)</option>
               <option value="landing">Onde você pousa</option>
             </select>
           </label>
@@ -166,7 +228,7 @@
         </div>
         <p id="mapText"></p>
         <div class="mapHost" id="map"></div>
-        <div class="splitText" id="mapLegend"></div>
+        <div class="splitText legend" id="mapLegend"></div>
         <div class="pick" id="mapPick" hidden></div>
         <p class="muted">Arraste para mover; use a roda do mouse, dois dedos ou os botões para aproximar; toque num ponto para ver o baú. Cada ponto é onde você estava ao abrir o baú. O desenho não tem o mapa do jogo por baixo, e a orientação (norte para cima) é aproximada.</p>
       </section>
@@ -230,6 +292,11 @@
         <legend>Equipe</legend>
         <label><input type="checkbox" data-setting="showTeammates"> Mostrar companheiros</label>
         <label><input type="checkbox" data-setting="countTeammates"> Somar os baús deles ao meu total</label>
+        <label><input type="checkbox" data-setting="countTeammateTreasures"> Somar os tesouros que eles encontraram <span class="muted">(o prêmio vale para o time)</span></label>
+      </fieldset>
+      <fieldset>
+        <legend>Leitura</legend>
+        <label><input type="checkbox" data-setting="readStorm"> Ler tempestade, mapa e rota <span class="muted">(cada replay é lido duas vezes: cerca de 2,5× mais lento)</span></label>
       </fieldset>
       <fieldset>
         <legend>Histórico</legend>
