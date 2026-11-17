@@ -63,16 +63,22 @@ public static class StormAnalyzer
     /// <summary>The circle before the first closing is not in the replay: it is taken as this many times the first target.</summary>
     private const double FirstCircleFactor = 2.2;
 
+    /// <summary>Reads the replay again in full mode (used when the shared single pass could not be used).</summary>
     public static StormInfo Analyze(byte[] data, MatchRecord match)
     {
-        var info = new StormInfo();
         var reader = new StormReader();
         FortniteReplay replay;
         using (var stream = new MemoryStream(data, writable: false))
         {
             replay = reader.ReadReplay(stream);
         }
+        return Analyze(replay, reader.Clock, match);
+    }
 
+    /// <summary>Storm, positions and route from a replay read in full mode, with its match clock.</summary>
+    public static StormInfo Analyze(FortniteReplay replay, MatchClock clock, MatchRecord match)
+    {
+        var info = new StormInfo();
         info.Phases = BuildPhases(replay.MapData?.SafeZones);
         var track = BuildTrack(replay, match);
         if (track.Count == 0)
@@ -92,11 +98,11 @@ public static class StormAnalyzer
 
         foreach (var chest in match.Chests)
         {
-            info.Chests.Add(Locate(chest.TimeSeconds, reader, track, info.Phases));
+            info.Chests.Add(Locate(chest.TimeSeconds, clock, track, info.Phases));
         }
         foreach (var find in match.TreasureFinds)
         {
-            info.Treasures.Add(find.ObtainedAtSeconds is float t ? Locate(t, reader, track, info.Phases) : null);
+            info.Treasures.Add(find.ObtainedAtSeconds is float t ? Locate(t, clock, track, info.Phases) : null);
         }
         return info;
     }
@@ -140,7 +146,7 @@ public static class StormAnalyzer
         return track;
     }
 
-    private static StormPoint? Locate(float replaySeconds, StormReader reader, List<(double Time, double X, double Y)> track, List<StormPhase> phases)
+    private static StormPoint? Locate(float replaySeconds, MatchClock reader, List<(double Time, double X, double Y)> track, List<StormPhase> phases)
     {
         if (track.Count == 0 || reader.ToMatchClock(replaySeconds) is not double clock) return null;
 
@@ -189,7 +195,7 @@ public static class StormAnalyzer
     /// <summary>Reads the replay in full mode and keeps the pairs (replay time, match clock) seen along the way.</summary>
     private sealed class StormReader : FortniteReplayReader.ReplayReader
     {
-        private readonly List<(float Replay, double Clock)> _clock = new();
+        public MatchClock Clock { get; } = new();
 
         public StormReader() : base(null, ParseMode.Full)
         {
@@ -198,20 +204,30 @@ public static class StormAnalyzer
         protected override void OnExportRead(uint channelIndex, INetFieldExportGroup? exportGroup)
         {
             base.OnExportRead(channelIndex, exportGroup);
-            if (exportGroup is GameState state && (state.ReplicatedWorldTimeSecondsDouble ?? state.ReplicatedWorldTimeSeconds) is { } clock and > 0)
-            {
-                var now = Unreal.Core.ReplayReader<FortniteReplay>.CurrentTime;
-                if (_clock.Count == 0 || now > _clock[^1].Replay) _clock.Add((now, clock));
-            }
+            Clock.Observe(exportGroup);
         }
+    }
+}
 
-        /// <summary>Chest times are in replay time; the storm and the positions use the match clock.</summary>
-        public double? ToMatchClock(float replaySeconds)
+/// <summary>Chest times are in replay time; the storm and the positions use the match clock (GameState samples).</summary>
+public sealed class MatchClock
+{
+    private readonly List<(float Replay, double Clock)> _clock = new();
+
+    public void Observe(INetFieldExportGroup? exportGroup)
+    {
+        if (exportGroup is GameState state && (state.ReplicatedWorldTimeSecondsDouble ?? state.ReplicatedWorldTimeSeconds) is { } clock and > 0)
         {
-            if (_clock.Count == 0) return null;
-            var index = _clock.FindLastIndex(c => c.Replay <= replaySeconds);
-            var sample = _clock[Math.Max(index, 0)];
-            return sample.Clock + (replaySeconds - sample.Replay);
+            var now = Unreal.Core.ReplayReader<FortniteReplay>.CurrentTime;
+            if (_clock.Count == 0 || now > _clock[^1].Replay) _clock.Add((now, clock));
         }
+    }
+
+    public double? ToMatchClock(float replaySeconds)
+    {
+        if (_clock.Count == 0) return null;
+        var index = _clock.FindLastIndex(c => c.Replay <= replaySeconds);
+        var sample = _clock[Math.Max(index, 0)];
+        return sample.Clock + (replaySeconds - sample.Replay);
     }
 }

@@ -37,12 +37,15 @@ O que não existe aqui: contagem ao vivo durante a partida, overlay, página par
 - **Abas** (Resumo, Tempestade, Gráficos, Listas) para a página não ficar comprida.
 - **Tempestade:** para cada baú e tesouro, se você estava na zona segura ou dentro da tempestade, com as
   porcentagens em texto e em barras (no total, por fase e por partida) e um mapa dos pontos. É uma análise só da
-  versão web (`Storm.cs`): lê o replay uma segunda vez, no modo completo do leitor, por isso a leitura demora
-  mais. Partidas lidas antes dela precisam do replay de novo.
+  versão web (`Storm.cs`): o replay é lido uma vez só, no modo completo do leitor, que dá a contagem e as
+  posições juntas (antes eram duas leituras; agora cerca de 2× mais rápido). Se esse modo falhar num replay, ele é
+  lido do jeito antigo. Partidas lidas antes dela precisam do replay de novo.
 - **Mapa** (`map.js`): pontos dos baús com cor por tempestade, tipo, fase ou momento; só tesouros; calor dos
   baús (mancha suave, do azul ao amarelo); rotas (uma linha por partida, mais clara onde se repetem); onde você pousa (primeiro baú de cada partida). Dá para aproximar,
   arrastar e tocar num ponto para ver o baú. O detalhe de cada partida tem o mapa dela, com a rota e os baús
   numerados. Não há imagem do mapa do jogo por baixo.
+- **Rankings** (aba Listas): partidas com mais baús e com mais tesouros, seguindo o filtro, com barra,
+  detalhes (por minuto, eliminações, tesouros encontrados) e toque para abrir a partida.
 - **Hora do Tesouro** (`treasure.js`): contagem regressiva para a próxima Hora do Tesouro e para a troca semanal
   de prêmios (domingo 14:00 UTC, horário relatado pela comunidade); baús da semana atual, dentro e fora do evento;
   um resumo por semana da temporada; a chance acumulada de cada prêmio, somando baú por baú com o multiplicador
@@ -51,8 +54,8 @@ O que não existe aqui: contagem ao vivo durante a partida, overlay, página par
   vem preenchida (conferida em 16/11/2026), pode ser editada na página, e cada hora tem "Ver baús", que aplica
   o filtro de data e hora daquele evento.
 - **Gráficos:** baús por minuto de partida, por dia da semana e hora, e recordes.
-- **Leitura** (Ajustes): "Ler tempestade, mapa e rota" pode ser desligado; cada replay passa a ser lido uma vez
-  só (cerca de 2,5× mais rápido). Uma nova versão da análise de tempestade não relê a pasta inteira sozinha:
+- **Leitura** (Ajustes): "Ler tempestade, mapa e rota" pode ser desligado; a leitura fica cerca de
+  2× mais rápida. Uma nova versão da análise de tempestade não relê a pasta inteira sozinha:
   o botão **Completar partidas antigas** relê só as partidas que precisam. **Parar a leitura** interrompe uma
   importação longa, e o registro mostra quanto tempo cada replay levou.
 - **Token pirata e tesouros do time** (analisador v16, do ChestCounter v2.0.25): o bloco "Token pirata" diz se

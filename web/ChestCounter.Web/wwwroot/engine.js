@@ -91,6 +91,7 @@ function frameEngine(onProgress) {
             mode: 'frame',
             analyzerVersion: info.analyzerVersion,
             stormVersion: info.stormVersion ?? 0,
+            nativeBytes: info.nativeBytes ?? 0,
             restarts: 0,
             analyze: async (file, withStorm = true) => {
                 const buffer = await file.arrayBuffer();

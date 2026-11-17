@@ -367,6 +367,7 @@ public sealed class ReplayAnalyzer : FortniteReplayReader.ReplayReader
     protected override void OnExportRead(uint channelIndex, INetFieldExportGroup? exportGroup)
     {
         base.OnExportRead(channelIndex, exportGroup);
+        ExportObserver?.Invoke(exportGroup);
 
         if (exportGroup is PlayerPawn lifePawn && Channels[channelIndex]?.ActorId is uint lifeId
             && (lifePawn.bIsDying != null || lifePawn.bIsDBNO != null))
@@ -508,9 +509,16 @@ public sealed class ReplayAnalyzer : FortniteReplayReader.ReplayReader
     /// Parses <paramref name="file"/> and returns what the tracked player did with chests.
     /// </summary>
     /// <param name="username">Epic display name to track. If null/empty or not found, the replay owner is used.</param>
+    /// <summary>Browser build: sees every export as it is read, so other analyses can share this pass.</summary>
+    public Action<INetFieldExportGroup?>? ExportObserver { get; set; }
+
+    /// <summary>Browser build: the replay read by the last <see cref="Analyze"/> call.</summary>
+    public FortniteReplay? LastReplay { get; private set; }
+
     public MatchRecord Analyze(Stream stream, string file, string? username)
     {
         var replay = ReadReplay(stream);
+        LastReplay = replay;
 
         if (Environment.GetEnvironmentVariable("CHESTCOUNTER_DEBUG") == "4")
         {

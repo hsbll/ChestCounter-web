@@ -271,6 +271,25 @@
     </section>
 
     <section class="card">
+      <h2>Rankings</h2>
+      <p class="muted">Seguem o período e o modo escolhidos no filtro. Toque numa partida para ver os detalhes.</p>
+      <div class="rankings">
+        <div>
+          <h3>Mais baús</h3>
+          <p id="rankChestsText"></p>
+          <ol class="rankList" id="rankChests"></ol>
+          <div class="buttons pager"><button type="button" id="more-rankChests" hidden></button><button type="button" id="less-rankChests" hidden>Mostrar menos</button></div>
+        </div>
+        <div>
+          <h3>Mais tesouros</h3>
+          <p id="rankTreasuresText"></p>
+          <ol class="rankList" id="rankTreasures"></ol>
+          <div class="buttons pager"><button type="button" id="more-rankTreasures" hidden></button><button type="button" id="less-rankTreasures" hidden>Mostrar menos</button></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
       <h2>Partidas <span class="muted" id="matchesNote"></span></h2>
       <p class="muted">Clique em uma partida para ver os baús um a um.</p>
       <div class="scroll"><table id="matches" class="clickable"></table></div>
@@ -296,7 +315,7 @@
       </fieldset>
       <fieldset>
         <legend>Leitura</legend>
-        <label><input type="checkbox" data-setting="readStorm"> Ler tempestade, mapa e rota <span class="muted">(cada replay é lido duas vezes: cerca de 2,5× mais lento)</span></label>
+        <label><input type="checkbox" data-setting="readStorm"> Ler tempestade, mapa e rota <span class="muted">(leitura completa do replay: cerca de 2× mais lenta que só contar)</span></label>
       </fieldset>
       <fieldset>
         <legend>Histórico</legend>

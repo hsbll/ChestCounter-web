@@ -322,3 +322,22 @@ input[type=datetime-local] { font: 20px var(--text); color: var(--ink); backgrou
 .weekTrack { display: flex; gap: 2px; height: 18px; background: var(--card2); border: 2px solid var(--line); }
 .weekTrack .safe { background: var(--accent); } .weekTrack .gold { background: var(--krill); }
 @media (max-width: 640px) { .weekRow { grid-template-columns: 1fr; } .weekRow .valueText { grid-column: 1; } }
+
+/* Rankings */
+.rankings { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 26px; }
+.rankings h3 { font: 700 13px var(--label); text-transform: uppercase; color: var(--accent); margin: 6px 0 4px; }
+.rankList { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.rankRow { display: grid; grid-template-columns: 44px 1fr; gap: 10px; align-items: center; padding: 6px 8px; background: var(--card2); border: 2px solid var(--line); cursor: pointer; }
+.rankRow:hover, .rankRow:focus-visible { border-color: var(--accent); outline: none; }
+.rankPos { font: 28px/1 var(--text); text-align: center; color: var(--ink2); }
+.rankRow.p1 { border-color: var(--krill); } .rankRow.p1 .rankPos { color: var(--krill); text-shadow: 2px 2px 0 #000; font-size: 32px; }
+.rankRow.p2 .rankPos { color: #d7dde6; } .rankRow.p3 .rankPos { color: #e0995a; }
+.rankBody { display: grid; gap: 3px; min-width: 0; }
+.rankTop { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; }
+.rankValue { font: 26px/1 var(--text); color: var(--ink); }
+.rankWhen, .rankDetail { color: var(--ink2); font-size: 17px; }
+.rankDetail:empty { display: none; }
+.rankTrack { height: 8px; background: var(--card); border: 1px solid var(--line); }
+.rankFill { display: block; height: 100%; background: var(--accent); }
+.rankRow.p1 .rankFill { background: var(--krill); }
+@media (max-width: 760px) { .rankings { grid-template-columns: 1fr; } }

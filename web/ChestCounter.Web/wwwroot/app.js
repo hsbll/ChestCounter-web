@@ -34,7 +34,7 @@ const pct = (part, whole) => (whole > 0 ? fmt1.format(100 * part / whole) + '%' 
 const plural = (n, one, many) => `${fmt.format(n)} ${n === 1 ? one : many}`;
 
 // Long lists start short: [rows shown at first, rows added by "Mostrar mais"].
-const LIST = { matches: [10, 25], treasures: [5, 20], mates: [5, 20] };
+const LIST = { matches: [10, 25], treasures: [5, 20], mates: [5, 20], rankChests: [10, 15], rankTreasures: [10, 15] };
 const APP_VERSION = document.querySelector('meta[name="app-version"]')?.content || 'dev';
 
 let data = store.emptyData();
@@ -213,6 +213,7 @@ function draw() {
     drawChart(chartDays === 30 ? s.days30 : s.lastDays);
     drawTabs();
     drawStorm(s);
+    drawRankings(s);
     drawTreasure(s);
     drawMap(s);
     drawExtras(s);
@@ -332,7 +333,7 @@ function drawNotices() {
             : protectedStorage === false
                 ? 'Armazenamento: o navegador pode apagar o histórico se o disco encher. Mantenha um backup (Exportar histórico).'
                 : '';
-    $('appVersion').textContent = `Versão ${APP_VERSION}` + (engine ? ` · analisador ${engine.analyzerVersion}` : '');
+    $('appVersion').textContent = `Versão ${APP_VERSION}` + (engine ? ` · analisador ${engine.analyzerVersion}` + (engine.nativeBytes && engine.nativeBytes <= 8 * 1048576 ? ' · sem AOT' : '') : '');
 }
 
 function drawTabs() {
@@ -567,6 +568,55 @@ function valueBars(rows) {
 
 function claimKey(prize, profile, weekStart) {
     return `${profile}|${prize.scope === 'season' ? 'season' : weekStart}`;
+}
+
+// ---- Rankings ---------------------------------------------------------------------------------------------
+/** Matches ordered by a value (ties share the position, the older match first), with a bar for each. */
+function rankList(name, entries, unit, describe) {
+    entries.sort((a, b) => b.value - a.value || a.date - b.date);
+    let position = 0;
+    entries.forEach((e, i) => { if (i === 0 || e.value !== entries[i - 1].value) position = i + 1; e.position = position; });
+    const shown = entries.slice(0, pager(name, entries.length));
+    const max = Math.max(1, entries[0]?.value ?? 0);
+    const list = $(name);
+    list.replaceChildren(...shown.map(e => {
+        const item = el('li', { class: `rankRow p${Math.min(e.position, 4)}`, tabindex: '0', role: 'button', 'aria-label': `${e.position}º: ${plural(e.value, ...unit)} em ${dateShort.format(e.date)}` },
+            el('span', { class: 'rankPos', text: `#${e.position}` }),
+            el('span', { class: 'rankBody' },
+                el('span', { class: 'rankTop' },
+                    el('span', { class: 'rankValue', text: plural(e.value, ...unit) }),
+                    el('span', { class: 'rankWhen', text: `${dateShort.format(e.date)} · ${modeName(e.m.playlist)}` + (e.m.placement ? ` · ${e.m.placement}º lugar` : '') })),
+                el('span', { class: 'rankTrack' }, el('span', { class: 'rankFill', style: `width:${100 * e.value / max}%` })),
+                describe ? el('span', { class: 'rankDetail', text: describe(e) }) : null));
+        const open = () => openMatch(e.m);
+        item.addEventListener('click', open);
+        item.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); } });
+        return item;
+    }));
+    return entries;
+}
+
+function drawRankings(s) {
+    const settings = data.settings;
+    const chests = rankList('rankChests', s.rows.filter(r => r.total > 0).map(r => ({ m: r.m, date: r.date, value: r.total, own: r.own })),
+        ['baú', 'baús'], e => [e.value !== e.own ? `${fmt.format(e.own)} seus, o resto do time` : '',
+            e.m.durationSeconds > 60 ? `${fmt1.format(e.value / (e.m.durationSeconds / 60))} por minuto` : '',
+            e.m.eliminations ? plural(e.m.eliminations, 'eliminação', 'eliminações') : ''].filter(Boolean).join(' · '));
+    const treasures = rankList('rankTreasures', s.rows.map(r => ({ m: r.m, date: r.date, finds: stats.treasuresOf(r.m, settings) }))
+        .filter(e => e.finds.length).map(e => ({ ...e, value: e.finds.length })),
+        ['tesouro', 'tesouros'], e => {
+            const names = new Map();
+            for (const f of e.finds) names.set(treasureName(f), (names.get(treasureName(f)) ?? 0) + 1);
+            return [...names].map(([n, c]) => (c > 1 ? `${c}× ${n}` : n)).join(', ');
+        });
+    const avg = s.rows.length ? s.total / s.rows.length : 0;
+    $('rankChestsText').textContent = chests.length
+        ? `Sua melhor partida teve ${plural(chests[0].value, 'baú', 'baús')} (${dateShort.format(chests[0].date)}), ${fmt1.format(chests[0].value / Math.max(avg, 0.1))}× a sua média de ${fmt1.format(avg)} por partida neste filtro.`
+        : 'Nenhuma partida com baús neste filtro.';
+    const withTreasure = treasures.length;
+    $('rankTreasuresText').textContent = withTreasure
+        ? `${plural(withTreasure, 'partida teve', 'partidas tiveram')} tesouro (${pct(withTreasure, s.rows.length)} das partidas neste filtro). O recorde é ${plural(treasures[0].value, 'tesouro', 'tesouros')} em uma partida.`
+        : 'Nenhum tesouro encontrado nas partidas deste filtro.';
 }
 
 function drawTreasure(s) {
@@ -1514,7 +1564,7 @@ $('copyDiag').addEventListener('click', async () => {
     const entries = Object.values(data.matches);
     const lines = [
         `Chest Lookout ${APP_VERSION}`,
-        `analisador: ${engine ? `${engine.analyzerVersion} (${engine.mode}${engine.restarts ? `, reiniciado ${engine.restarts}×` : ''})` : 'não carregado'}` + (startup.ms != null ? `, ${startup.ms} ms` : '') + (startup.fallback ? ', plano B' : ''),
+        `analisador: ${engine ? `${engine.analyzerVersion} (${engine.mode}${engine.restarts ? `, reiniciado ${engine.restarts}×` : ''})` : 'não carregado'}` + (startup.ms != null ? `, ${startup.ms} ms` : '') + (startup.fallback ? ', plano B' : '') + (engine?.nativeBytes ? `, runtime ${Math.round(engine.nativeBytes / 1048576)} MB (${engine.nativeBytes > 8 * 1048576 ? 'AOT' : 'sem AOT, leitura mais lenta'})` : ''),
         `leitura: ${data.settings.readStorm ? 'com tempestade' : 'só contagem'}` + (readTimes.length
             ? `, ${readTimes.length} replays nesta visita, média ${fmt1.format(readTimes.reduce((a, b) => a + b, 0) / readTimes.length)} s, maior ${fmt1.format(Math.max(...readTimes))} s` : ', nenhum replay lido nesta visita'),
         `memória da página: ${performance.memory ? `${Math.round(performance.memory.usedJSHeapSize / 1048576)} MB usados de ${Math.round(performance.memory.jsHeapSizeLimit / 1048576)} MB` : 'indisponível'}`,

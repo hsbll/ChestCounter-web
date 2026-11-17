@@ -46,9 +46,26 @@ public static class WebAnalyzer
 
         try
         {
-            using var stream = new MemoryStream(data, writable: false);
-            // Same call as the desktop tool: the player who recorded the replay is the one counted.
-            var match = new ReplayAnalyzer().Analyze(stream, fileName, "");
+            // With the storm, one pass in full mode gives both the count and the positions (about a third faster
+            // than reading the replay twice). If that pass fails, the replay is read the usual way, then again for the storm.
+            MatchRecord match;
+            FortniteReplayReader.Models.FortniteReplay? fullReplay = null;
+            MatchClock? clock = null;
+            if (withStorm && SinglePass)
+            {
+                try
+                {
+                    (match, fullReplay, clock) = AnalyzeFull(data, fileName);
+                }
+                catch (Exception)
+                {
+                    match = AnalyzeNormal(data, fileName);
+                }
+            }
+            else
+            {
+                match = AnalyzeNormal(data, fileName);
+            }
             match.ReplayFile = fileName;
             var result = new AnalysisResult { Status = "ok", Match = match, SupportedVersion = Profiles.IsSupportedVersion(match), CountedPlaylist = Profiles.IsBattleRoyalePlaylist(match.Playlist) };
             if (!withStorm)
@@ -59,7 +76,7 @@ public static class WebAnalyzer
             {
                 try
                 {
-                    result.Storm = StormAnalyzer.Analyze(data, match);
+                    result.Storm = fullReplay != null && clock != null ? StormAnalyzer.Analyze(fullReplay, clock, match) : StormAnalyzer.Analyze(data, match);
                 }
                 catch (Exception ex)
                 {
@@ -73,6 +90,35 @@ public static class WebAnalyzer
         {
             var inner = (ex as AggregateException)?.InnerException ?? ex;
             return new AnalysisResult { Status = "error", Message = $"{inner.GetType().Name}: {inner.Message}" };
+        }
+    }
+
+    /// <summary>False only for comparisons: forces the old two-pass reading.</summary>
+    public static bool SinglePass { get; set; } = true;
+
+    private static MatchRecord AnalyzeNormal(byte[] data, string fileName)
+    {
+        using var stream = new MemoryStream(data, writable: false);
+        // Same call as the desktop tool: the player who recorded the replay is the one counted.
+        return new ReplayAnalyzer().Analyze(stream, fileName, "");
+    }
+
+    /// <summary>The desktop analysis, run in full mode so the same pass also keeps positions, storm and clock.</summary>
+    private static (MatchRecord, FortniteReplayReader.Models.FortniteReplay, MatchClock) AnalyzeFull(byte[] data, string fileName)
+    {
+        var previous = Environment.GetEnvironmentVariable("CHESTCOUNTER_MODE");
+        Environment.SetEnvironmentVariable("CHESTCOUNTER_MODE", "Full");
+        try
+        {
+            var clock = new MatchClock();
+            var analyzer = new ReplayAnalyzer { ExportObserver = clock.Observe };
+            using var stream = new MemoryStream(data, writable: false);
+            var match = analyzer.Analyze(stream, fileName, "");
+            return (match, analyzer.LastReplay!, clock);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("CHESTCOUNTER_MODE", previous);
         }
     }
 

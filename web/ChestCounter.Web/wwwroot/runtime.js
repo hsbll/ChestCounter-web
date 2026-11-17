@@ -1,6 +1,12 @@
 // Starts the .NET WebAssembly runtime and returns the exported C# functions (ChestCounter.Web.Interop).
 // onProgress(loaded, total) follows the download of the runtime files (first visit: several megabytes);
 // onStage(name) says how far the start got. Each stage is also written to the console, to tell where a start stalls.
+/** Size of the runtime's .wasm: an AOT build (much faster) is several times bigger than the interpreted one. */
+export function nativeBytes() {
+    const entry = performance.getEntriesByType('resource').find(e => /dotnet\.native\.[^/]*\.?wasm(\?|$)/.test(e.name));
+    return entry?.decodedBodySize || 0;
+}
+
 export async function loadAnalyzer(onProgress, onStage = () => {}) {
     const where = typeof document === 'undefined' ? 'worker' : 'page';
     const stage = name => {
