@@ -341,3 +341,68 @@ input[type=datetime-local] { font: 20px var(--text); color: var(--ink); backgrou
 .rankFill { display: block; height: 100%; background: var(--accent); }
 .rankRow.p1 .rankFill { background: var(--krill); }
 @media (max-width: 760px) { .rankings { grid-template-columns: 1fr; } }
+
+/* ---- Cleaner layout --------------------------------------------------------------------------------------- */
+/* Import card: full instructions only before the first match; afterwards a compact bar with the buttons. */
+#dropCard.compact { padding-top: 14px; padding-bottom: 14px; }
+#dropCard.compact .drop { border-width: 2px; padding: 10px 12px; text-align: left; }
+#dropCard.compact .drop .buttons { justify-content: flex-start; }
+#dropCard.compact:not(.showHelp) :is(.dropTitle, .path, .howto, #rememberNote) { display: none; }
+#dropCard.compact .remember { margin-top: 10px; padding-top: 10px; }
+#dropCard.compact .status { margin-top: 10px; }
+#dropCard:not(.compact) #howToggle { display: none; }
+button.linkish { background: none; border: 0; box-shadow: none; color: var(--ink2); text-decoration: underline dotted; text-transform: none; font: 19px var(--text); letter-spacing: 0; padding: 6px 4px; transform: none; }
+button.linkish:hover { color: var(--accent); }
+.logBox { margin-top: 10px; }
+.logBox summary, details.help summary, details.more summary { cursor: pointer; color: var(--ink2); font: 700 11px var(--label); text-transform: uppercase; letter-spacing: .04em; padding: 4px 0; list-style: none; }
+.logBox summary::before, details.help summary::before, details.more summary::before { content: "▸ "; color: var(--accent); }
+.logBox[open] summary::before, details.help[open] summary::before, details.more[open] summary::before { content: "▾ "; }
+.logBox summary::-webkit-details-marker, details summary::-webkit-details-marker { display: none; }
+details.help { margin-top: 12px; }
+details.help summary::before { content: "? "; }
+details.help[open] summary::before { content: "? "; }
+details.help p { margin: 6px 0 0; }
+details.more { margin-top: 6px; }
+
+/* Tabs: settings set apart at the end */
+.tabs .gear { margin-left: auto; }
+.tabs .gear::before { content: "⚙ "; }
+
+/* One legend per card */
+.legend:not(.splitText) { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; color: var(--ink2); font-size: 18px; margin: 0 0 10px; padding: 0; border: 0; background: none; max-width: none; }
+.legend .key { margin-left: 6px; }
+.legend .key:first-child { margin-left: 0; }
+
+/* Storm phases: one line each */
+.phaseRows { display: grid; gap: 6px; margin-top: 6px; }
+.phaseRow { display: grid; grid-template-columns: 70px 1fr minmax(150px, auto); gap: 10px; align-items: center; }
+.phaseLabel { font: 700 11px var(--label); text-transform: uppercase; color: var(--ink2); }
+.phaseTrack { height: 16px; }
+.phaseBar { display: flex; gap: 2px; height: 100%; }
+.phaseBar .safe { background: var(--accent); } .phaseBar .storm { background: var(--epic); }
+.phaseText { font-size: 18px; color: var(--ink2); white-space: nowrap; }
+@media (max-width: 640px) {
+  .phaseRow { grid-template-columns: 60px 1fr; }
+  .phaseText { grid-column: 2; white-space: normal; }
+  .tabs .gear { margin-left: 0; }
+}
+/* Summary tiles: three per row, numbers in the readable font */
+#tiles { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 520px) { #tiles { grid-template-columns: repeat(2, 1fr); } }
+.tiles dd { font: 44px/1 var(--text); letter-spacing: .02em; }
+/* Import bar: the remembered-folder row only when a folder is remembered (or the help is open) */
+#dropCard.compact:not(.showHelp) .remember:has(#refresh[hidden]) { display: none; }
+#dropCard.compact .remember { border-top: 0; }
+#dropCard.compact .remember .primary:not(#refresh) { background: var(--card2); color: var(--ink); }
+.countdown { font: 46px/1 var(--text); letter-spacing: .02em; }
+.countdown.small { font-size: 32px; }
+@media (max-width: 640px) {
+  /* tabs in one swipeable row instead of four rows of buttons */
+  .tabs { flex-wrap: nowrap; overflow-x: auto; gap: 8px; padding: 4px 2px 8px; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+  .tabs button { flex: none; font-size: 12px; padding: 10px 12px; }
+  #dropCard.compact .drop .buttons { gap: 8px; }
+  #dropCard.compact .drop .buttons button:not(.linkish) { flex: 1 1 40%; font-size: 12px; padding: 10px 8px; margin: 0; }
+  #dropCard.compact .drop { padding: 8px; }
+}
+.settings { grid-template-columns: repeat(2, 1fr); }
+@media (max-width: 640px) { .settings { grid-template-columns: 1fr; } }

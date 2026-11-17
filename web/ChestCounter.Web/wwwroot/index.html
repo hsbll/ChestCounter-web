@@ -18,7 +18,7 @@
 <header class="top">
   <div>
     <h1>Chest <span>Lookout</span></h1>
-    <p class="sub">Conta os baús dos seus replays do Fortnite. Os arquivos são lidos aqui no navegador e não saem do seu computador.</p>
+    <p class="sub">Seus baús do Fortnite, contados a partir dos replays. Nada sai do seu computador.</p>
   </div>
   <label class="profile" id="profileBox" hidden>Conta
     <select id="profile"></select>
@@ -31,10 +31,11 @@
       <p class="dropTitle">Arraste aqui os arquivos <code>.replay</code>, um <code>.zip</code> com eles ou a pasta inteira</p>
       <p class="muted path">No PC do jogo eles ficam em <code id="demosPath">%LOCALAPPDATA%\FortniteGame\Saved\Demos</code>
         <button type="button" class="small" id="copyPath">Copiar caminho</button></p>
-      <p class="muted">Clique em <b>Escolher pasta</b>, cole o caminho na barra de endereço da janela e aperte Enter.</p>
+      <p class="muted howto">Clique em <b>Escolher pasta</b>, cole o caminho na barra de endereço da janela e aperte Enter.</p>
       <div class="buttons">
-        <button type="button" class="primary" id="pickFiles">Escolher arquivos ou zip</button>
+        <button type="button" class="primary" id="pickFiles">Adicionar replays ou zip</button>
         <button type="button" id="pickFolder">Escolher pasta</button>
+        <button type="button" class="linkish" id="howToggle" aria-expanded="false">Onde ficam os replays?</button>
       </div>
       <div class="buttons" id="upgradeBox" hidden>
         <button type="button" id="upgrade">Completar partidas antigas…</button>
@@ -54,7 +55,7 @@
     <p class="status" id="engineStatus" role="status">Carregando o analisador… os botões são liberados quando terminar.</p>
     <div class="progress" id="progress" hidden><div id="progressBar"></div></div>
     <div class="buttons stopRow"><button type="button" class="danger" id="stopImport" hidden>Parar a leitura</button></div>
-    <ul class="log" id="log" aria-live="polite"></ul>
+    <details class="logBox" id="logBox" hidden><summary id="logSummary">Arquivos lidos</summary><ul class="log" id="log" aria-live="polite"></ul></details>
   </section>
 
   <p class="notice" id="storageNotice" hidden>Este navegador não está guardando o histórico (janela anônima ou armazenamento bloqueado). Use <b>Exportar histórico</b> antes de fechar a página.</p>
@@ -64,6 +65,7 @@
   <section id="empty" class="card emptyState">
     <h2>Nenhuma partida ainda</h2>
     <p>Adicione seus replays acima. Cada partida é contada uma única vez, e o histórico continua aqui mesmo que você apague os arquivos depois.</p>
+    <div class="buttons"><button type="button" id="importEmpty">Importar um histórico salvo</button></div>
   </section>
 
   <div id="report" hidden>
@@ -92,11 +94,12 @@
 
     <div class="tabs" role="tablist" aria-label="Seções do relatório">
       <button type="button" role="tab" id="tab-resumo" data-tab-button="resumo">Resumo</button>
+      <button type="button" role="tab" id="tab-listas" data-tab-button="listas">Partidas</button>
       <button type="button" role="tab" id="tab-tesouro" data-tab-button="tesouro">Hora do Tesouro</button>
-      <button type="button" role="tab" id="tab-tempestade" data-tab-button="tempestade">Tempestade</button>
       <button type="button" role="tab" id="tab-mapa" data-tab-button="mapa">Mapa</button>
+      <button type="button" role="tab" id="tab-tempestade" data-tab-button="tempestade">Tempestade</button>
       <button type="button" role="tab" id="tab-graficos" data-tab-button="graficos">Gráficos</button>
-      <button type="button" role="tab" id="tab-listas" data-tab-button="listas">Listas</button>
+      <button type="button" role="tab" id="tab-ajustes" data-tab-button="ajustes" class="gear">Ajustes</button>
     </div>
 
     <div data-tab="resumo">
@@ -125,17 +128,13 @@
       <section class="card">
         <h2>Baús por tipo</h2>
         <div class="scroll"><table id="kinds"></table></div>
+        <p class="muted small" id="othersText"></p>
       </section>
       <section class="card">
-        <h2>Outros contêineres</h2>
-        <div class="scroll"><table id="others"></table></div>
+        <h2>Por modo</h2>
+        <div class="scroll"><table id="modes"></table></div>
       </section>
     </div>
-
-    <section class="card">
-      <h2>Por modo</h2>
-      <div class="scroll"><table id="modes"></table></div>
-    </section>
 
     </div>
 
@@ -144,28 +143,32 @@
         <h2>Dentro e fora da tempestade</h2>
         <p id="stormText"></p>
         <div id="stormBars"></div>
-        <p class="muted" id="stormNote"></p>
+        <details class="help"><summary>Como ler</summary><p class="muted" id="stormNote"></p></details>
       </section>
       <section class="card">
         <h2>Por fase da tempestade</h2>
         <p id="phaseText"></p>
+        <div class="legend"><span class="key safe"></span> Zona segura <span class="key storm"></span> Tempestade</div>
         <div id="stormPhases"></div>
-        <p class="muted">Fase 0 é antes de o primeiro círculo começar a fechar; a fase 1 começa quando ele fecha pela primeira vez.</p>
+        <details class="help"><summary>Como ler</summary><p class="muted">Fase 0 é antes de o primeiro círculo começar a fechar; a fase 1 começa quando ele fecha pela primeira vez. A barra mostra quantos baús você abriu na fase, e a parte roxa, quantos deles foram dentro da tempestade.</p></details>
       </section>
     </div>
 
     <div data-tab="tesouro">
-      <section class="card">
-        <h2>Próxima Hora do Tesouro</h2>
-        <div class="countdown" id="nextEvent"></div>
-        <p id="nextEventText"></p>
-      </section>
-      <section class="card">
-        <h2>Semana de prêmios</h2>
-        <div class="countdown small" id="weekReset"></div>
-        <p id="weekText"></p>
-        <div id="weekBars"></div>
-      </section>
+      <div class="two">
+        <section class="card">
+          <h2>Próxima Hora do Tesouro</h2>
+          <div class="countdown" id="nextEvent"></div>
+          <p id="nextEventText"></p>
+        </section>
+        <section class="card">
+          <h2>Semana de prêmios</h2>
+          <div class="countdown small" id="weekReset"></div>
+          <p id="weekText"></p>
+          <div id="weekBars"></div>
+          <details class="help"><summary>Como ler</summary><p class="muted">Os prêmios da semana (roupa, veículo, picareta…) trocam no domingo às 11:00 de Brasília, horário informado pela comunidade. Cada baú conta pelo horário em que foi aberto, então uma partida que atravessa a troca entra só com os baús de depois dela.</p></details>
+        </section>
+      </div>
       <section class="card">
         <h2>Semanas da temporada</h2>
         <p id="weekHistoryText"></p>
@@ -177,7 +180,7 @@
         <p id="chanceText"></p>
         <label class="inlineCheck"><input type="checkbox" id="chanceTeam"> Incluir os baús vistos dos companheiros <span class="muted">(os prêmios valem para o time)</span></label>
         <div class="scroll"><table id="chances"></table></div>
-        <p class="muted">Chance de ter tirado o prêmio pelo menos uma vez, somando cada baú com a chance do momento em que foi aberto (maior dentro de uma Hora do Tesouro). É probabilidade, não promessa, e não diz nada sobre o próximo baú. Os prêmios da semana contam só os baús desde a troca semanal; o token conta a temporada toda. Marque "Já tenho" para o que você já ganhou: a Epic tira esse prêmio do seu sorteio.</p>
+        <details class="help"><summary>Como ler</summary><p class="muted">Chance de ter tirado o prêmio pelo menos uma vez, somando cada baú com a chance do momento em que foi aberto (maior dentro de uma Hora do Tesouro). É probabilidade, não promessa, e não diz nada sobre o próximo baú. Os prêmios da semana contam só os baús desde a troca semanal; o token conta a temporada toda. Marque "Já tenho" para o que você já ganhou: a Epic tira esse prêmio do seu sorteio.</p></details>
       </section>
       <section class="card">
         <h2>Meta</h2>
@@ -194,6 +197,8 @@
       </section>
       <section class="card">
         <h2>Horas do Tesouro</h2>
+        <p id="eventsSummary"></p>
+        <details class="more" id="eventsDetails"><summary>Ver e editar os horários</summary>
         <p class="muted" id="eventsNote"></p>
         <div class="scroll"><table id="events"></table></div>
         <div class="buttons pager">
@@ -201,6 +206,7 @@
           <button type="button" id="eventsAdd" hidden>Adicionar hora</button>
           <button type="button" class="danger" id="eventsReset" hidden>Voltar à lista padrão</button>
         </div>
+        </details>
       </section>
     </div>
 
@@ -230,7 +236,7 @@
         <div class="mapHost" id="map"></div>
         <div class="splitText legend" id="mapLegend"></div>
         <div class="pick" id="mapPick" hidden></div>
-        <p class="muted">Arraste para mover; use a roda do mouse, dois dedos ou os botões para aproximar; toque num ponto para ver o baú. Cada ponto é onde você estava ao abrir o baú. O desenho não tem o mapa do jogo por baixo, e a orientação (norte para cima) é aproximada.</p>
+        <details class="help"><summary>Como ler</summary><p class="muted">Arraste para mover; use a roda do mouse, dois dedos ou os botões para aproximar; toque num ponto para ver o baú. Cada ponto é onde você estava ao abrir o baú. O desenho não tem o mapa do jogo por baixo, e a orientação (norte para cima) é aproximada.</p></details>
       </section>
     </div>
 
@@ -240,13 +246,13 @@
         <p id="rhythmText"></p>
         <div class="chart dense" id="rhythm" role="img"></div>
         <div class="axis dense" id="rhythmAxis" aria-hidden="true"></div>
-        <p class="muted">Minutos contados desde o início da gravação do replay, que inclui a espera e o ônibus.</p>
+        <details class="help"><summary>Como ler</summary><p class="muted">Minutos contados desde o início da gravação do replay, que inclui a espera e o ônibus.</p></details>
       </section>
       <section class="card">
         <h2>Dias e horários</h2>
         <p id="heatText"></p>
         <div class="scroll"><div class="heat" id="heat" role="img"></div></div>
-        <p class="muted">Baús por dia da semana e hora de início da partida, no seu horário. Quanto mais claro, mais baús.</p>
+        <details class="help"><summary>Como ler</summary><p class="muted">Baús por dia da semana e hora de início da partida, no seu horário. Quanto mais claro, mais baús.</p></details>
       </section>
       <section class="card">
         <h2>Recordes</h2>
@@ -255,20 +261,7 @@
     </div>
 
     <div data-tab="listas">
-    <section class="card" id="treasureCard">
-      <h2>Tesouros</h2>
-      <p class="muted" id="treasureSummary"></p>
-      <p class="chips" id="treasureTypes"></p>
-      <div class="scroll"><table id="treasures"></table></div>
-      <div class="buttons pager"><button type="button" id="more-treasures" hidden></button><button type="button" id="less-treasures" hidden>Mostrar menos</button></div>
-    </section>
 
-    <section class="card" id="matesCard" hidden>
-      <h2>Companheiros</h2>
-      <p class="muted">Os baús dos companheiros vêm do seu replay, que só registra o que acontece perto de você. Por isso são um mínimo (≥).</p>
-      <div class="scroll"><table id="mates"></table></div>
-      <div class="buttons pager"><button type="button" id="more-mates" hidden></button><button type="button" id="less-mates" hidden>Mostrar menos</button></div>
-    </section>
 
     <section class="card">
       <h2>Rankings</h2>
@@ -295,9 +288,24 @@
       <div class="scroll"><table id="matches" class="clickable"></table></div>
       <div class="buttons pager"><button type="button" id="more-matches" hidden></button><button type="button" id="less-matches" hidden>Mostrar menos</button></div>
     </section>
-    </div>
-  </div>
 
+    <section class="card" id="treasureCard">
+      <h2>Tesouros</h2>
+      <p class="muted" id="treasureSummary"></p>
+      <p class="chips" id="treasureTypes"></p>
+      <div class="scroll"><table id="treasures"></table></div>
+      <div class="buttons pager"><button type="button" id="more-treasures" hidden></button><button type="button" id="less-treasures" hidden>Mostrar menos</button></div>
+    </section>
+
+    <section class="card" id="matesCard" hidden>
+      <h2>Companheiros</h2>
+      <p class="muted">Os baús dos companheiros vêm do seu replay, que só registra o que acontece perto de você. Por isso são um mínimo (≥).</p>
+      <div class="scroll"><table id="mates"></table></div>
+      <div class="buttons pager"><button type="button" id="more-mates" hidden></button><button type="button" id="less-mates" hidden>Mostrar menos</button></div>
+    </section>
+    </div>
+
+    <div data-tab="ajustes">
   <section class="card">
     <h2>Ajustes</h2>
     <div class="settings">
@@ -333,6 +341,8 @@
       <input type="file" id="importInput" accept="application/json,.json" hidden>
     </div>
   </section>
+    </div>
+  </div>
 </main>
 
 <dialog id="matchDialog" aria-labelledby="matchTitle">

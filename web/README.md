@@ -44,6 +44,8 @@ O que não existe aqui: contagem ao vivo durante a partida, overlay, página par
   baús (mancha suave, do azul ao amarelo); rotas (uma linha por partida, mais clara onde se repetem); onde você pousa (primeiro baú de cada partida). Dá para aproximar,
   arrastar e tocar num ponto para ver o baú. O detalhe de cada partida tem o mapa dela, com a rota e os baús
   numerados. Não há imagem do mapa do jogo por baixo.
+- **Layout:** depois da primeira leitura, a caixa de importação vira uma barra compacta (ajuda em "Onde ficam os
+  replays?", arquivos lidos recolhidos); Ajustes ganhou uma aba própria; explicações longas ficam em "Como ler".
 - **Rankings** (aba Listas): partidas com mais baús e com mais tesouros, seguindo o filtro, com barra,
   detalhes (por minuto, eliminações, tesouros encontrados) e toque para abrir a partida.
 - **Hora do Tesouro** (`treasure.js`): contagem regressiva para a próxima Hora do Tesouro e para a troca semanal

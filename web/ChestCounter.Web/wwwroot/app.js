@@ -155,6 +155,7 @@ function draw() {
 
     const has = s.available > 0;
     $('empty').hidden = has;
+    $('dropCard').classList.toggle('compact', has);
     $('report').hidden = !has;
     if (!has) {
         const hidden = Object.values(data.matches).length;
@@ -202,11 +203,8 @@ function draw() {
         tile('Média por partida', fmt1.format(s.average)),
         tile('Melhor partida', fmt.format(s.bestMatch)),
         tile('Hoje', fmt.format(s.today)),
-        tile('Melhor dia', s.bestDay ? fmt.format(s.bestDay.chests) : '—', s.bestDay ? s.bestDay.key.split('-').reverse().join('/') : null),
-        tile('Tesouros', fmt.format(s.treasures.length)),
-        tile('Token pirata', s.tokens.length ? fmt.format(s.tokens.length) : 'Não', s.tokens.length ? `último ${dateDay.format(s.tokens[0].date)}` : 'nenhum visto ainda'),
-        tile('Vitórias', fmt.format(s.wins), share(s.wins)),
-        tile('Top 10', fmt.format(s.top10), share(s.top10)),
+        tile('Tesouros', fmt.format(s.treasures.length), s.tokens.length ? `token pirata: ${fmt.format(s.tokens.length)}` : null),
+        tile('Vitórias', fmt.format(s.wins), `top 10: ${fmt.format(s.top10)}`),
         ...(settings.showTeammates ? [tile('Baús dos companheiros', '≥ ' + fmt.format(s.teamChests))] : []),
     );
 
@@ -222,8 +220,10 @@ function draw() {
     table($('kinds'), [{ t: 'Tipo' }, { t: 'Baús', n: true }, { t: '%', n: true }],
         s.byKind.map(([kind, n]) => [kindName(kind), fmt.format(n), fmt1.format(100 * n / chestTotal)]), 'Nenhum baú aberto.');
     const counted = new Set(stats.extraKinds(settings));
-    table($('others'), [{ t: 'Tipo' }, { t: 'Abertos', n: true }, { t: 'No total?' }],
-        s.others.map(([kind, n]) => [kindName(kind), fmt.format(n), counted.has(kind) ? 'Sim' : 'Não']), 'Nenhum outro contêiner.');
+    const otherList = kinds => kinds.map(([kind, n]) => `${kindName(kind)} ${fmt.format(n)}`).join(' · ');
+    const notCounted = s.others.filter(([kind]) => !counted.has(kind)), inTotal = s.others.filter(([kind]) => counted.has(kind));
+    $('othersText').textContent = [notCounted.length ? `Também abertos, fora do total: ${otherList(notCounted)}.` : '',
+        inTotal.length ? `Somados ao total (Ajustes): ${otherList(inTotal)}.` : ''].filter(Boolean).join(' ');
     const modes = new Map();
     for (const row of s.rows) {
         const name = modeName(row.m.playlist);
@@ -341,6 +341,7 @@ function drawTabs() {
         const on = button.dataset.tabButton === tab;
         button.classList.toggle('primary', on);
         button.setAttribute('aria-selected', String(on));
+        if (on && button.parentElement.scrollWidth > button.parentElement.clientWidth) button.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
     for (const panel of document.querySelectorAll('[data-tab]')) panel.hidden = panel.dataset.tab !== tab;
 }
@@ -356,6 +357,18 @@ function splitBar(label, safe, storm, scale = 1) {
         el('div', { class: 'splitText' },
             el('span', { class: 'key safe' }), el('span', { text: `Zona segura ${fmt.format(safe)} (${pct(safe, total)})` }),
             el('span', { class: 'key storm' }), el('span', { text: `Tempestade ${fmt.format(storm)} (${pct(storm, total)})` })));
+}
+
+/** One compact row per storm phase: bar length = chests in the phase, purple part = inside the storm. */
+function phaseRow(phase, safe, storm, most) {
+    const total = safe + storm;
+    return el('div', { class: 'phaseRow' },
+        el('span', { class: 'phaseLabel', text: `Fase ${phase}` }),
+        el('span', { class: 'phaseTrack' },
+            el('span', { class: 'phaseBar', style: `width:${Math.max(1, 100 * total / most)}%` },
+                safe ? el('span', { class: 'safe', style: `flex:${safe}`, title: `Zona segura: ${fmt.format(safe)}` }) : null,
+                storm ? el('span', { class: 'storm', style: `flex:${storm}`, title: `Tempestade: ${fmt.format(storm)}` }) : null)),
+        el('span', { class: 'phaseText', text: `${plural(total, 'baú', 'baús')}` + (storm ? ` · ${pct(storm, total)} na tempestade` : '') }));
 }
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -387,7 +400,7 @@ function drawStorm(s) {
         $('phaseText').textContent = `A fase com mais baús é a ${top[0]} (${fmt.format(top[1].in + top[1].out)}).`
             + (worst && worst[1].in > 0 ? ` A maior parte dentro da tempestade é na fase ${worst[0]}: ${pct(worst[1].in, worst[1].in + worst[1].out)}.` : '');
         const most = Math.max(...phases.map(([, p]) => p.in + p.out));
-        $('stormPhases').replaceChildren(...phases.map(([phase, p]) => splitBar(`Fase ${phase}`, p.out, p.in, (p.in + p.out) / most)));
+        $('stormPhases').replaceChildren(el('div', { class: 'phaseRows' }, ...phases.map(([phase, p]) => phaseRow(phase, p.out, p.in, most))));
     }
     const missing = s.matches - matches;
     $('stormNote').textContent = [
@@ -648,10 +661,9 @@ function drawTreasure(s) {
     $('weekReset').dataset.label = 'Prêmios da semana trocam em';
 
     const teamWeek = team ? mateChests(weekStart, weekEnd) : 0;
-    $('weekText').textContent = `Semana desde ${weekdayTime.format(new Date(weekStart))}: você abriu ${plural(weekTimes.length, 'baú', 'baús')}, ${fmt.format(inEvent(weekTimes))} dentro de uma Hora do Tesouro.`
-        + (team ? ` Seus companheiros foram vistos abrindo pelo menos ${fmt.format(teamWeek)}.` : '')
-        + ' Cada baú conta pelo horário em que foi aberto, então uma partida que atravessa a troca entra só com os baús de depois dela.';
-    $('weekBars').replaceChildren(pairBar('Baús desta semana', weekTimes.length - inEvent(weekTimes), 'Fora da Hora do Tesouro', inEvent(weekTimes), 'Na Hora do Tesouro'));
+    $('weekText').textContent = `Desde ${weekdayTime.format(new Date(weekStart))}: ${plural(weekTimes.length, 'baú', 'baús')}, ${fmt.format(inEvent(weekTimes))} na Hora do Tesouro.`
+        + (team ? ` Companheiros: pelo menos ${fmt.format(teamWeek)}.` : '');
+    $('weekBars').replaceChildren(weekTimes.length === 0 ? '' : pairBar('Baús desta semana', weekTimes.length - inEvent(weekTimes), 'Fora da Hora do Tesouro', inEvent(weekTimes), 'Na Hora do Tesouro'));
 
     // Chances
     const claims = data.settings.claims;
@@ -667,7 +679,7 @@ function drawTreasure(s) {
     });
     const gold = rows[0];
     $('chanceText').textContent = gold.owned ? 'Você marcou a Roupa Dourada desta semana como já ganha.'
-        : `Chance de já ter tirado a Roupa Dourada nesta semana: ${chanceText(gold.result.chance)} (${oneIn(gold.result.chance)}), com ${plural(gold.chests, 'baú', 'baús')}. Token pirata na temporada: ${chanceText(rows[1].result.chance)}.`;
+        : `Chance de já ter tirado a Roupa Dourada nesta semana: ${chanceText(gold.result.chance)}${gold.result.chance > 0 ? ` (${oneIn(gold.result.chance)})` : ''}, com ${plural(gold.chests, 'baú', 'baús')}. Token pirata na temporada: ${chanceText(rows[1].result.chance)}.`;
     table($('chances'), [{ t: 'Prêmio' }, { t: 'Por baú', n: true }, { t: 'Baús contados', n: true }, { t: 'Sua chance', n: true }, { t: 'Já tenho' }],
         rows.map(r => [
             { t: r.prize.name, c: 'wrap' },
@@ -744,6 +756,11 @@ function drawWeeks(list, times, now, reset) {
 }
 
 function drawEvents(list, times, now) {
+    const past = list.filter(e => e.end <= now);
+    const inPast = past.reduce((sum, e) => sum + times.filter(t => t >= e.start && t < e.end).length, 0);
+    const upcoming = list.filter(e => e.end > now).length;
+    $('eventsSummary').textContent = `${plural(list.length, 'hora na lista', 'horas na lista')}: ${fmt.format(past.length)} já passaram (você abriu ${plural(inPast, 'baú', 'baús')} nelas) e ${fmt.format(upcoming)} ainda vão acontecer.`;
+    if (editingEvents) $('eventsDetails').open = true;
     const edited = !!data.settings.events;
     $('eventsNote').textContent = (edited ? 'Lista editada por você.' : 'Lista padrão, conferida em 16/11/2026 em sites que acompanham os anúncios da Epic.')
         + ' Horários no seu fuso. "Previsto" é o padrão de sábado que ainda não foi anunciado: confira e ajuste quando a Epic anunciar.';
@@ -815,6 +832,11 @@ setInterval(() => {
     if (first) render(); else tickCountdowns();
 }, 1000);
 
+$('howToggle').addEventListener('click', () => {
+    const on = $('dropCard').classList.toggle('showHelp');
+    $('howToggle').setAttribute('aria-expanded', String(on));
+});
+$('importEmpty').addEventListener('click', () => $('import').click());
 $('chanceTeam').addEventListener('change', event => { data.settings.chanceTeam = event.target.checked; persist(); });
 $('goalPrize').addEventListener('change', event => { data.settings.goal = { ...data.settings.goal, prize: event.target.value }; persist(); });
 $('goalTarget').addEventListener('change', event => { data.settings.goal = { ...data.settings.goal, target: Number(event.target.value) }; persist(); });
@@ -871,7 +893,8 @@ function drawExtras(s) {
         record('Melhor dia', s.bestDay ? fmt.format(s.bestDay.chests) : '—', s.bestDay ? s.bestDay.key.split('-').reverse().join('/') : null),
         record('Dias seguidos jogando', fmt.format(s.streak), 'maior sequência'),
         record('Mais tesouros', fmt.format(s.mostTreasures), 'em uma partida'),
-        record('Mais baús na tempestade', fmt.format(s.mostInStorm), 'em uma partida'));
+        record('Mais baús na tempestade', fmt.format(s.mostInStorm), 'em uma partida'),
+        record('Token pirata', s.tokens.length ? fmt.format(s.tokens.length) : 'Não', s.tokens.length ? `último ${dateDay.format(s.tokens[0].date)}` : 'nenhum visto ainda'));
 }
 
 function drawChart(days) {
@@ -1005,12 +1028,17 @@ $('matchDelete').addEventListener('click', async () => {
 });
 
 // ---- reading replays ------------------------------------------------------------------------------------
+let logCount = 0, logErrors = 0;
 function log(name, text, kind) {
     if (kind === 'err') {
         problems.push(`${name}: ${text}`);
         if (problems.length > 20) problems.shift();
     }
     const list = $('log');
+    logCount++;
+    if (kind === 'err') { logErrors++; $('logBox').open = true; }
+    $('logBox').hidden = false;
+    $('logSummary').textContent = `Arquivos lidos (${fmt.format(logCount)})` + (logErrors ? ` · ${plural(logErrors, 'erro', 'erros')}` : '');
     list.prepend(el('li', {}, el('span', { text: name }), el('span', { class: kind, text })));
     while (list.children.length > 300) list.lastChild.remove();
 }
@@ -1556,6 +1584,8 @@ $('reset').addEventListener('click', async () => {
     filter.size = '';
     filter.range = null;
     $('log').replaceChildren();
+    logCount = logErrors = 0;
+    $('logBox').hidden = true;
     await persist();
     setStatus(count ? 'Histórico apagado. O backup foi baixado.' : 'Histórico apagado.');
 });
