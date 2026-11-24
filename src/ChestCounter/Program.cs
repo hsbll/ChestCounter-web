@@ -210,6 +210,8 @@ internal static class Program
                 tracker.MarkSkipped(existing);
             }
             // "Abrir con Fortnite" queda desactivado: se activa en Ajustes.
+            // El agradecimiento es para quien ya la usaba y actualiza: quien la instala ahora acaba de ver la bienvenida.
+            config.ThanksShown = true;
         }
         store.SaveConfig(config);
 
@@ -239,6 +241,16 @@ internal static class Program
         }
 
         var form = new MainForm(monitor, store);
+        if (!config.ThanksShown && OperatingSystem.IsWindows())
+        {
+            // Una sola vez, la primera vez que la ventana se ve tras actualizar (no encima del juego si se abrió minimizada).
+            form.ShowOnceWhenVisible(() =>
+            {
+                config.ThanksShown = true;
+                try { store.SaveConfig(config); } catch { /* se volvería a mostrar: no es grave */ }
+                ThanksDialog.Open(form);
+            });
+        }
         monitor.CloseRequested += () =>
         {
             try { form.BeginInvoke(new Action(form.Close)); }

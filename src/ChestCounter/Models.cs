@@ -165,6 +165,9 @@ public sealed class Config
     /// <summary>Open the tool automatically when Fortnite starts (invisible standby process started with Windows).</summary>
     public bool StartWithFortnite { get; set; }
 
+    /// <summary>The thank-you message (end of the token hunt) was already shown once, after updating.</summary>
+    public bool ThanksShown { get; set; }
+
     /// <summary>
     /// "auto" (install new versions between matches, default), "prompt" (offer them) or "off" (never check GitHub).
     /// Saved under a new name since 2.0.21: everyone moved to automatic updates once; later choices are kept.

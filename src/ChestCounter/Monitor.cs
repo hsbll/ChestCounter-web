@@ -84,6 +84,7 @@ public sealed class Monitor
     private DateTime? _fortniteClosedSince;
     private DateTime? _autoCloseAt;
     private bool _closeRequested;
+    private bool _treasureHour;
 
     public Monitor(Store store, Config config, TrackerData data, Tracker tracker, string dataDir)
     {
@@ -437,6 +438,14 @@ public sealed class Monitor
             }
 
             changed |= CheckUpdate();
+
+            // Empieza o termina una Hora del tesoro: la ventana y el overlay cambian de color.
+            var treasureHour = TreasureHours.Active(DateTime.UtcNow) != null;
+            if (treasureHour != _treasureHour)
+            {
+                _treasureHour = treasureHour;
+                changed = true;
+            }
             if (_reportRequested)
             {
                 _reportRequested = false;

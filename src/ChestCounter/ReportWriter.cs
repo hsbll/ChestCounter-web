@@ -961,6 +961,7 @@ public static class ReportWriter
         .stats{display:flex;justify-content:space-between;gap:14px;border-top:1px solid #222938;padding-top:7px}
         .stat .cap{font-size:10px}.stat b{display:block;font-size:16px;font-weight:700}
         .stat.t b{color:#ff80aa}.stat small{display:block;font-size:11px;font-weight:600;color:#7a8496}
+        .box.gold{border:2px solid #ffb84d;box-shadow:0 0 18px rgba(255,184,77,.35)}.box.gold .head>span:first-child{color:#ffb84d}
         """;
 
     /// <summary>The overlay card (shared by overlay.html and the OBS page served by the tool).</summary>
@@ -974,8 +975,8 @@ public static class ReportWriter
         var badge = v.Badge != null ? $"<span class=\"pill\">{H(v.Badge.TrimStart('●', ' '))}</span>" : "";
         var chip = v.Current == null ? "none" : v.CurrentLive ? "live" : "";
         return $"""
-            <div class="box{(v.CurrentLive ? " live" : "")}">
-            <div class="head"><span>{L.T("COFRES", "CHESTS")}</span>{badge}</div>
+            <div class="box{(v.CurrentLive ? " live" : "")}{(v.TreasureHour != null ? " gold" : "")}">
+            <div class="head"><span>{H(v.TreasureHour ?? L.T("COFRES", "CHESTS"))}</span>{badge}</div>
             <div class="main">
               <div class="total"><span class="big">{H(v.Total)}</span><span class="cap">total</span></div>
               <div class="chip {chip}"><span class="big">{H(v.Current ?? "—")}</span><span class="cap">{H(v.CurrentCaption)}</span></div>

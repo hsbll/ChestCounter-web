@@ -12,7 +12,15 @@ public static class OverlayModel
     /// <param name="live">Cifras de la partida en curso, cuando el replay se pudo leer (null si no).</param>
     /// <param name="inProgress">Hay una partida grabándose (aunque sus cifras aún no se puedan leer).</param>
     /// <param name="initialChests">Cofres estimados de antes de usar la herramienta (solo se suman al total).</param>
-    public static OverlayView Build(TrackerData d, MatchRecord? live, bool inProgress, int initialChests = 0)
+    /// <param name="utcNow">Hora para saber si es Hora del tesoro (null = ahora).</param>
+    public static OverlayView Build(TrackerData d, MatchRecord? live, bool inProgress, int initialChests = 0, DateTime? utcNow = null)
+    {
+        // Corto: el overlay no encoge, un texto largo lo dejaría ancho para siempre (la hora de fin va en la ventana).
+        var treasure = TreasureHours.Active(utcNow ?? DateTime.UtcNow) != null ? L.T("★ HORA DEL TESORO", "★ TREASURE HOUR") : null;
+        return BuildView(d, live, inProgress, initialChests) with { TreasureHour = treasure };
+    }
+
+    private static OverlayView BuildView(TrackerData d, MatchRecord? live, bool inProgress, int initialChests)
     {
         var liveChests = live?.ChestsOpened ?? 0;
         var liveTreasures = live?.TreasureFinds.Count ?? 0;

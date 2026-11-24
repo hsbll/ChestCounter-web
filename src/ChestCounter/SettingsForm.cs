@@ -264,14 +264,7 @@ public sealed class SettingsForm : Form
 
         // Pie: web y redes del autor, como enlaces que abren el navegador.
         var footer = AddCard(LeftX, 586, RightX + RightW - LeftX, 44, 12);
-        AddLinks(footer, L.T("Web y redes", "Web and social"), "dprojects.org", "https://dprojects.org/",
-            new (string Tip, string Url, string Logo)[]
-            {
-                ("Twitter", "https://x.com/xdoofy92", "social-twitter"),
-                ("Instagram", "https://www.instagram.com/xdoofy92/", "social-instagram"),
-                ("YouTube", "https://www.youtube.com/@xdoofy92", "social-youtube"),
-                ("TikTok", "https://www.tiktok.com/@xdoofy92", "social-tiktok"),
-            });
+        AddLinks(footer, L.T("Web y redes", "Web and social"), "dprojects.org", "https://dprojects.org/", Networks);
 
         FitTexts(this);
         AcceptButton = close;
@@ -554,7 +547,17 @@ public sealed class SettingsForm : Form
             x += size + gap;
         }
     }
-    private static Image? LoadLogo(string name)
+    /// <summary>Redes del autor (pie de Ajustes y mensaje de agradecimiento).</summary>
+    internal static readonly (string Tip, string Url, string Logo)[] Networks =
+    {
+        ("Twitter", "https://x.com/xdoofy92", "social-twitter"),
+        ("Instagram", "https://www.instagram.com/xdoofy92/", "social-instagram"),
+        ("YouTube · @xdoofy92", "https://www.youtube.com/@xdoofy92", "social-youtube"),
+        ("YouTube · @xdoofy92FN", "https://www.youtube.com/@xdoofy92FN", "social-youtube"),
+        ("TikTok", "https://www.tiktok.com/@xdoofy92", "social-tiktok"),
+    };
+
+    internal static Image? LoadLogo(string name)
     {
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"ChestCounter.Assets.{name}.png");
         if (stream == null)
@@ -566,7 +569,7 @@ public sealed class SettingsForm : Form
         return new Bitmap(new MemoryStream(bytes.ToArray()));
     }
 
-    private static void OpenUrl(string url)
+    internal static void OpenUrl(string url)
     {
         try
         {

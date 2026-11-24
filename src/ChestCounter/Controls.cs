@@ -36,6 +36,15 @@ public sealed class Card : Panel
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public int Radius { get; set; } = 16;
 
+    /// <summary>Color del borde (null = el normal). La Hora del tesoro lo pone dorado.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public Color? EdgeColor
+    {
+        get => _edge;
+        set { if (_edge != value) { _edge = value; Invalidate(); } }
+    }
+    private Color? _edge;
+
     protected override void OnPaintBackground(PaintEventArgs e)
     {
         // Las esquinas recortadas se ven del color del fondo de la ventana.
@@ -48,7 +57,7 @@ public sealed class Card : Panel
         var rect = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
         using var path = Shape.Rounded(rect, Radius);
         using var fill = new SolidBrush(BackColor);
-        using var edge = new Pen(Theme.CardEdge, 1f);
+        using var edge = new Pen(_edge ?? Theme.CardEdge, _edge != null ? 1.5f : 1f);
         e.Graphics.FillPath(fill, path);
         e.Graphics.DrawPath(edge, path);
     }

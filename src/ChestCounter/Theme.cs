@@ -27,6 +27,7 @@ internal static class Theme
     public static readonly Color Blue = Color.FromArgb(56, 120, 220);    // barras del gráfico
     public static readonly Color Rose = Color.FromArgb(255, 128, 170);   // tesoros
     public static readonly Color Coral = Color.FromArgb(255, 99, 99);    // desactivado
+    public static readonly Color TreasurePanel = Color.FromArgb(48, 38, 20); // fondo dorado oscuro (Hora del tesoro)
 
     // Nombres usados por otras ventanas (mismo significado que antes).
     public static Color Gold => Amber;
@@ -54,6 +55,20 @@ internal static class Theme
         catch
         {
             // sin soporte: la ventana queda con el estilo normal
+        }
+    }
+
+    /// <summary>Color del borde de la ventana en Windows 11 (null = el del sistema). En versiones antiguas se ignora.</summary>
+    public static void Border(IntPtr hwnd, Color? color)
+    {
+        try
+        {
+            var value = color is { } c ? c.R | (c.G << 8) | (c.B << 16) : unchecked((int)0xFFFFFFFF); // DWMWA_COLOR_DEFAULT
+            DwmSetWindowAttribute(hwnd, 34, ref value, sizeof(int)); // DWMWA_BORDER_COLOR
+        }
+        catch
+        {
+            // sin soporte
         }
     }
 

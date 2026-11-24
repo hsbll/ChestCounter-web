@@ -15,7 +15,13 @@ public sealed class MainForm : Form
 {
     private readonly Monitor _monitor;
     private readonly Store _store;
-    private readonly Card _badgeCard;
+    private readonly Card _badgeCard, _hero;
+    private readonly Label _title;
+    private bool? _treasureShown;
+    private readonly Card _countCard;
+    private readonly Label _countLabel;
+    private readonly ToolTip _countTip = new();
+    private readonly System.Windows.Forms.Timer _clock = new() { Interval = 1000 };
     private readonly Label _badge;
     private readonly Label _profileName;
     private readonly ComboBox _profile;
@@ -64,12 +70,35 @@ public sealed class MainForm : Form
         Icon = AppIcon.Load();
 
         // Cabecera: título, perfil y distintivo.
-        Lbl(this, L.T("CONTADOR DE COFRES", "CHEST COUNTER"), 8.5f, FontStyle.Bold, Theme.Cyan, new Point(LeftX, 14), new Size(202, 18));
-        _badgeCard = new Card { Location = new Point(484, 9), Size = new Size(96, 22), Radius = 11, BackColor = Theme.Panel, Visible = false };
+        _title = Lbl(this, L.T("CONTADOR DE COFRES", "CHEST COUNTER"), 8.5f, FontStyle.Bold, Theme.Cyan, new Point(LeftX, 14), new Size(282, 18));
+
+        // Cuenta atrás de la Hora del tesoro de hoy, junto al título (solo el día que la hay y antes de que empiece).
+        _countCard = new Card { Location = new Point(168, 9), Size = new Size(128, 22), Radius = 11, BackColor = Theme.TreasurePanel, Visible = false };
+        _countLabel = Lbl(_countCard, "", 8.0f, FontStyle.Bold, Theme.Amber, new Point(0, 0), new Size(128, 22), ContentAlignment.MiddleCenter);
+        Controls.Add(_countCard);
+        _countCard.BringToFront(); // por encima del título, que es ancho para los textos de la Hora del tesoro
+        _clock.Tick += (_, _) => UpdateTreasureClock();
+        _clock.Start();
+        FormClosed += (_, _) => { _clock.Dispose(); _countTip.Dispose(); };
+        // Corazón: vuelve a abrir el mensaje de agradecimiento (por si se cerró sin leerlo).
+        // Solo el corazón (sin botón alrededor), más claro al pasar el ratón.
+        var thanks = new Label
+        {
+            Text = "♥", Location = new Point(550, 2), Size = new Size(32, 34), Font = Theme.Text(17f, FontStyle.Bold),
+            ForeColor = Theme.Rose, BackColor = Theme.Bg, TextAlign = ContentAlignment.MiddleCenter, Cursor = Cursors.Hand,
+            AccessibleName = L.T("Un mensaje de Doofy", "A message from Doofy"), AccessibleRole = AccessibleRole.PushButton,
+        };
+        thanks.MouseEnter += (_, _) => thanks.ForeColor = Color.FromArgb(255, 180, 205);
+        thanks.MouseLeave += (_, _) => thanks.ForeColor = Theme.Rose;
+        thanks.Click += (_, _) => ThanksDialog.Open(this);
+        new ToolTip().SetToolTip(thanks, L.T("Un mensaje de Doofy", "A message from Doofy"));
+        Controls.Add(thanks);
+
+        _badgeCard = new Card { Location = new Point(451, 9), Size = new Size(96, 22), Radius = 11, BackColor = Theme.Panel, Visible = false };
         _badge = Lbl(_badgeCard, "", 8.0f, FontStyle.Bold, Theme.Mint, new Point(0, 0), new Size(96, 22), ContentAlignment.MiddleCenter);
         Controls.Add(_badgeCard);
 
-        _profileName = Lbl(this, "", 8.0f, FontStyle.Regular, Theme.Muted, new Point(230, 11), new Size(240, 18), ContentAlignment.TopRight);
+        _profileName = Lbl(this, "", 8.0f, FontStyle.Regular, Theme.Muted, new Point(300, 11), new Size(145, 18), ContentAlignment.TopRight);
         _profile = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
@@ -77,8 +106,8 @@ public sealed class MainForm : Form
             BackColor = Theme.Panel,
             ForeColor = Theme.Ink,
             Font = Theme.Text(),
-            Location = new Point(306, 8),
-            Size = new Size(164, 24),
+            Location = new Point(300, 8),
+            Size = new Size(145, 24),
             Visible = false,
         };
         _profile.SelectedIndexChanged += (_, _) =>
@@ -91,7 +120,7 @@ public sealed class MainForm : Form
         Controls.Add(_profile);
 
         // Tarjeta principal: total y partida actual.
-        var hero = new Card { Location = new Point(LeftX, 40), Size = new Size(LeftW, 100), Radius = 16 };
+        var hero = _hero = new Card { Location = new Point(LeftX, 40), Size = new Size(LeftW, 100), Radius = 16 };
         Controls.Add(hero);
         _total = Lbl(hero, "0", 28f, FontStyle.Bold, Theme.Cyan, new Point(15, 6), new Size(120, 50));
         _totalCap = Lbl(hero, L.T("cofres en total", "chests in total"), 8.0f, FontStyle.Regular, Theme.Muted, new Point(16, 59), new Size(120, 16));
@@ -187,6 +216,26 @@ public sealed class MainForm : Form
         };
     }
 
+    /// <summary>
+    /// Runs the action once, the first time the window is active and not minimized (right after showing, or when the
+    /// player restores it if it was opened minimized with Fortnite). Deferred so the main window is drawn first.
+    /// </summary>
+    public void ShowOnceWhenVisible(Action action)
+    {
+        var done = false;
+        void Try(object? sender, EventArgs e)
+        {
+            if (done || WindowState == FormWindowState.Minimized || !Visible)
+            {
+                return;
+            }
+            done = true;
+            Activated -= Try;
+            BeginInvoke(action);
+        }
+        Activated += Try;
+    }
+
     private const int DesignW = 592, DesignHBase = 332, DesignHTeam = 416;
     private int _designH = DesignHBase;
     private readonly Dictionary<Control, LayoutEntry> _layout = new();
@@ -261,6 +310,7 @@ public sealed class MainForm : Form
     {
         base.OnHandleCreated(e);
         Theme.Chrome(Handle); // esquinas redondeadas de Windows 11 (el sistema las dibuja sin tocar botones ni bordes)
+        _treasureShown = null; // ventana nueva: vuelve a aplicar el borde
         if (_last != null)
         {
             Render(_last);
@@ -346,12 +396,21 @@ public sealed class MainForm : Form
         }
         _daily.SetDays(st.LastDays);
         var pirateAlert = s.PirateTokenLive || st.LastMatch?.PirateToken == true;
+        var now = DateTime.UtcNow;
+        var treasureHour = TreasureHours.Active(now);
         _pirateLabel.Text = pirateAlert
             ? (s.PirateTokenLive ? L.T("★ TOKEN PIRATA · Detectado en esta partida", "★ PIRATE TOKEN · Detected in this match")
                 : L.T("★ TOKEN PIRATA · Detectado en la partida anterior", "★ PIRATE TOKEN · Detected in the previous match"))
                 + "\n" + (s.TokenDetails ?? L.T("Ver detalles en Tesoros →", "View details in Treasures →"))
-            : L.T("TOKEN DE TIENDA PIRATA · Sin detecciones\nTu replay y equipo · Ver Tesoros →", "PIRATE SHOP TOKEN · No detections\nYour replay and team · View Treasures →");
-        _pirateLabel.ForeColor = pirateAlert ? Theme.Amber : Theme.Muted;
+            : treasureHour != null
+                ? L.T("★ HORA DEL TESORO · Más probabilidad de tesoros", "★ TREASURE HOUR · Better treasure odds")
+                    + "\n" + L.T("Tienda pirata ×1,5 · Traje dorado ×7,5 · Vehículo ×10", "Pirate Shop ×1.5 · Gold outfit ×7.5 · Vehicle ×10")
+            : L.T("TOKEN DE TIENDA PIRATA · Sin detecciones", "PIRATE SHOP TOKEN · No detections") + "\n"
+                + (TreasureHours.Next(now) is { } next
+                    ? L.F("Próxima Hora del tesoro: {0} · Ver Tesoros →", "Next Treasure Hour: {0} · View Treasures →", TreasureHours.When(next))
+                    : L.T("Tu replay y equipo · Ver Tesoros →", "Your replay and team · View Treasures →"));
+        _pirateLabel.ForeColor = pirateAlert || treasureHour != null ? Theme.Amber : Theme.Muted;
+        RenderTreasureHour(treasureHour);
         SetBottomPanels(s.Team != null, true);
         RenderTeam(s.Team);
 
@@ -400,6 +459,48 @@ public sealed class MainForm : Form
         // Los botones ocupan el mismo sitio que el aviso o la actualización: cuando hay aviso, se ocultan.
         var notice = _update.Visible || _noticeCard.Visible;
         _overlayButton.Visible = _reportButton.Visible = _settingsButton.Visible = !notice;
+    }
+
+    /// <summary>
+    /// Hora del tesoro: título dorado con la hora de fin, borde dorado en la tarjeta principal, la del token y la ventana.
+    /// </summary>
+    private void RenderTreasureHour(TreasureHours.Window? hour)
+    {
+        var on = hour != null;
+        UpdateTreasureClock();
+        if (_treasureShown == on) return;
+        _treasureShown = on;
+        _title.ForeColor = on ? Theme.Amber : Theme.Cyan;
+        _hero.EdgeColor = _pirateCard.EdgeColor = on ? Theme.Amber : null;
+        _pirateCard.BackColor = _pirateLabel.BackColor = on ? Theme.TreasurePanel : Theme.Panel;
+        if (IsHandleCreated) Theme.Border(Handle, on ? Theme.Amber : null);
+    }
+
+    /// <summary>
+    /// Título y cuenta atrás, cada segundo. Durante la hora el título dorado cuenta el tiempo que le queda. El día que hay
+    /// Hora del tesoro y aún no ha empezado, la píldora junto al título cuenta hacia ella (la tarjeta de abajo ya dice
+    /// la fecha de la próxima los demás días).
+    /// </summary>
+    private void UpdateTreasureClock()
+    {
+        var now = DateTime.UtcNow;
+        var active = TreasureHours.Active(now);
+        var next = active == null ? TreasureHours.Next(now) : null;
+        if (next != null && next.StartLocal.Date != DateTime.Now.Date)
+        {
+            next = null; // no es hoy
+        }
+        _title.Text = active != null
+            ? L.T("★ HORA DEL TESORO", "★ TREASURE HOUR") + " · " + L.F("quedan {0}", "{0} left", TreasureHours.Countdown(active.EndUtc - now))
+            : L.T("CONTADOR DE COFRES", "CHEST COUNTER");
+        _countCard.Visible = next != null;
+        if (next != null)
+        {
+            var text = L.F("Tesoro en {0}", "Treasure in {0}", TreasureHours.Countdown(next.StartUtc - now));
+            if (_countLabel.Text != text) _countLabel.Text = text;
+            var tip = L.F("Próxima Hora del tesoro: {0}", "Next Treasure Hour: {0}", TreasureHours.When(next));
+            if (_countTip.GetToolTip(_countLabel) != tip) _countTip.SetToolTip(_countLabel, tip);
+        }
     }
 
     /// <summary>
@@ -488,7 +589,7 @@ public sealed class MainForm : Form
     {
         try
         {
-            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true })?.Dispose();
         }
         catch
         {

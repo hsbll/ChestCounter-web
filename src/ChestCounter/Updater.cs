@@ -121,7 +121,17 @@ public static class Updater
                 try { File.Delete(old); } catch { old = exe + $".{DateTime.Now:yyyyMMddHHmmss}.old"; }
             }
             File.Move(exe, old);
-            File.Move(download, exe);
+            try
+            {
+                File.Move(download, exe);
+            }
+            catch
+            {
+                // The new exe could not take its place (antivirus, file locked…): put the old one back, or the player
+                // would be left without ChestCounter.exe.
+                try { File.Move(old, exe); } catch { }
+                throw;
+            }
             return null;
         }
         catch (Exception ex)

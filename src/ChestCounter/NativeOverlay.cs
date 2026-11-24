@@ -15,7 +15,11 @@ public sealed record OverlayRow(string Label, string Value, bool Treasure = fals
 /// <param name="Current">Right counter (match in progress, or last match); null = "—".</param>
 /// <param name="CurrentLive">Right counter is the match in progress (green).</param>
 /// <param name="Badge">Header badge ("● EN DIRECTO" / "● LIVE") or null.</param>
-public sealed record OverlayView(string Total, string? Current, string CurrentCaption, bool CurrentLive, string? Badge, IReadOnlyList<OverlayRow> Rows);
+public sealed record OverlayView(string Total, string? Current, string CurrentCaption, bool CurrentLive, string? Badge, IReadOnlyList<OverlayRow> Rows)
+{
+    /// <summary>Treasure Hour in progress: header text ("★ HORA DEL TESORO") drawn in gold with a gold border, or null.</summary>
+    public string? TreasureHour { get; init; }
+}
 
 [SupportedOSPlatform("windows")]
 public static class NativeOverlay
@@ -390,7 +394,7 @@ public static class NativeOverlay
         {
             // Header: "COFRES" ... [● EN DIRECTO] [lock]
             _badgeW = v.Badge != null ? TextWidth(hdc, _fontHeader, BadgeText(v.Badge), out _) + S(22) : 0;
-            var headerW = TextWidth(hdc, _fontHeader, Header, out _headerH) + S(10) + _badgeW + S(24);
+            var headerW = TextWidth(hdc, _fontHeader, v.TreasureHour ?? Header, out _headerH) + S(10) + _badgeW + S(24);
 
             // Big total on the left, current / last match in a rounded chip on the right.
             _col1W = Math.Max(TextWidth(hdc, _fontBig, v.Total, out _bigH), TextWidth(hdc, _fontCaption, CaptionTotal.ToUpperInvariant(), out _captionH));
@@ -499,7 +503,9 @@ public static class NativeOverlay
 
         // Thin border following the rounded shape.
         var border = CreateRoundRectRgn(0, 0, rc.Right + 1, rc.Bottom + 1, S(16), S(16));
-        FrameRgn(hdc, border, _brushBorder, 1, 1);
+        // Hora del tesoro: borde dorado de 2 px, para que se note de un vistazo.
+        var thick = v.TreasureHour != null ? Math.Max(2, S(2)) : 1;
+        FrameRgn(hdc, border, v.TreasureHour != null ? _brushGold : _brushBorder, thick, thick);
         DeleteObject(border);
 
         var x = S(Stripe) + S(Pad);
@@ -507,7 +513,7 @@ public static class NativeOverlay
         var y = S(9);
 
         // Header: title, state pill, lock button (Segoe MDL2 Assets: E785 = open padlock, E72E = closed padlock).
-        Text(hdc, _fontHeader, muted, Header, x, y, right, y + _headerH);
+        Text(hdc, _fontHeader, v.TreasureHour != null ? gold : muted, v.TreasureHour ?? Header, x, y, right, y + _headerH);
         if (v.Badge != null)
         {
             var pr = _lockRect.Left - S(6);
